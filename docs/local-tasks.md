@@ -17,6 +17,7 @@ If you build on this layer: use the service on the server and the hooks in the b
 | `src/app/api/tasks/**` | The REST routes, thin wrappers over the service |
 | `src/lib/tasks/client.ts` | Browser: REST calls, TanStack Query hooks, window events |
 | `src/lib/tasks/cache-utils.ts` | Optimistic cache updates behind the hooks |
+| `src/lib/tasks/last-list.ts` | The last-used list, remembered per browser |
 | `src/lib/tasks/format.ts` | Due labels, repeat descriptions, error messages |
 | `src/lib/tasks/reminders.ts` | The reminder run of the cron: claims due reminders from the service and sends the Web Push |
 | `src/lib/tasks/tools.ts`, `tool-scopes.ts`, `tool-types.d.ts` | The assistant and MCP tools: schemas, descriptions, `runTaskTool`, names and MCP scopes |
@@ -165,7 +166,9 @@ For code that cannot use hooks, `tasksApi` has the same calls as plain functions
 | Event | Detail | Use |
 | --- | --- | --- |
 | `mailflare:tasks-changed` (`TASKS_CHANGED_EVENT`) | none | Sent after every mutation by the hooks. Call `notifyTasksChanged()` when tasks changed some other way (an assistant tool ran, a plain `fetch`); the hooks then refetch. Listen with `onTasksChanged(fn)` in code that shows tasks without the hooks. Other tabs of the same browser are told through a `BroadcastChannel` and refetch too |
-| `mailflare:tasks-open-panel` (`TASKS_OPEN_PANEL_EVENT`) | `{ taskId?, listId? }` | Asks the Tasks side panel to open, on a list or with a task in focus. Send with `openTasksPanel(detail)`; the panel listens with `onTasksOpenPanel(fn)`. Nothing happens on pages that do not mount the panel |
+| `mailflare:tasks-open-panel` (`TASKS_OPEN_PANEL_EVENT`) | `{ taskId?, listId?, view? }` | Asks the Tasks side panel to open, on a list, on a smart view (`view: "today"` is what the calendar's pending-tasks chip sends) or with a task in focus. `view` is a hint: a panel without smart views just opens. Send with `openTasksPanel(detail)`; the panel listens with `onTasksOpenPanel(fn)`. Nothing happens on pages that do not mount the panel |
+
+**Last-used list** (`last-list.ts`): `getLastTaskListId()` is where a surface that does not ask puts a new task ("Add to tasks" on an email); a surface that shows a list calls `rememberLastTaskList(listId)` when the user switches to it or adds a task to it. It is one `localStorage` entry, so the id can name a list that is gone: a create that fails with `NOT_FOUND` is retried without `listId`.
 
 **Display helpers** (`format.ts`): `formatTaskDue(task, t)` ("Today", "Tomorrow", "Friday", "Nov 30", plus the time of a timed task), `describeTaskRepeat(repeat, t)` ("Weekly", "Every 2 weeks, 5 times"), `taskErrorMessage(error, t, fallback?)`. `isTaskOverdue(task, now, timeZone)` and `compareTasksByDue` are in `task-utils.ts`.
 
