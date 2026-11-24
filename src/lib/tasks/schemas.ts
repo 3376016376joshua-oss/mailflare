@@ -1,15 +1,13 @@
 import { z } from "zod";
 import { isValidTimeZone } from "@/lib/time/utils";
-import { MAX_REPEAT_COUNT, MAX_REPEAT_INTERVAL, isDateString, isTimeString } from "./task-utils";
+import { MAX_REPEAT_COUNT, MAX_REPEAT_INTERVAL, TASK_LIST_TITLE_MAX, TASK_NOTES_MAX, TASK_TITLE_MAX, isDateString, isTimeString } from "./task-utils";
 
 /**
  * Input validation for the tasks service, shared by the REST routes and any tool layer built on it.
- * Limits follow Google Tasks (title 1024, notes 8192).
+ * The length limits live in task-utils.ts, so the browser can use them without bundling zod.
  */
 
-export const TASK_TITLE_MAX = 1024;
-export const TASK_NOTES_MAX = 8192;
-export const TASK_LIST_TITLE_MAX = 255;
+export { TASK_LIST_TITLE_MAX, TASK_NOTES_MAX, TASK_TITLE_MAX };
 
 const id = z.string().min(1).max(160);
 const date = z.string().refine(isDateString, "Use a date like 2026-11-30");
