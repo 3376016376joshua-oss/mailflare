@@ -22,6 +22,7 @@ import {
 } from "@/components/message-actions/utils";
 import { toggleMessageStar } from "./message-list-row-actions-utils";
 import { useConversationNotes } from "./conversation-notes-context";
+import { AddToTasksMenuItem } from "@/components/tasks/add-to-tasks";
 import type { ThreadMessageActionsProps } from "./thread-message-actions-types";
 import type { ReplyMode } from "@/components/message-actions/types";
 
@@ -230,6 +231,7 @@ export function ThreadMessageActions({
 								{t("note.add")}
 							</MessageActionMenuItem>
 						)}
+						<AddToTasksMenuItem messageId={message.id} />
 						<MessageActionMenuSeparator />
 						<MessageActionMenuItem
 							icon={message.read ? <Mail className="h-4 w-4" /> : <MailOpen className="h-4 w-4" />}
