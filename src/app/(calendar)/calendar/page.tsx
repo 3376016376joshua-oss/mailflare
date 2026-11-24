@@ -530,7 +530,7 @@ export default function CalendarPage() {
             <button type="button" aria-label={t(`calendar.nextView.${view}`)} onClick={() => setVisibleDate(view === "month" ? addMonths(visibleDate, 1) : addDays(visibleDate, view === "week" ? 7 : 1))} className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-neutral-600 hover:bg-neutral-50"><ChevronRight className="h-5 w-5" /></button>
             <button type="button" onClick={() => setVisibleDate(new Date())} className="h-10 rounded-full max-md:hidden bg-white px-4 text-sm font-medium text-neutral-700 hover:bg-neutral-50">{t("calendar.today")}</button>
             <div className="ml-1 flex items-center max-md:ml-0">
-              <Button disabled={pendingAction !== null} onClick={() => openNewEvent()} className={clsx("h-10 rounded-l-full rounded-r-none bg-blue-600 pl-4 pr-3 text-white hover:bg-blue-500")}><Plus className="h-5 w-5" />{t("calendar.newEvent")}</Button>
+              <Button disabled={pendingAction !== null} onClick={() => openNewEvent()} className={clsx("h-10 rounded-l-full rounded-r-none bg-blue-600 pl-4 pr-3 text-white hover:bg-blue-500")}><Plus className="h-5 w-5" /><span className="max-[420px]:sr-only">{t("calendar.newEvent")}</span></Button>
               <DropdownMenu.Root>
                 <DropdownMenu.Trigger asChild>
                   <button type="button" aria-label={t("calendar.options")} className="flex h-10 w-9 items-center justify-center rounded-l-none rounded-r-full border-l border-white/40 bg-blue-600 text-white hover:bg-blue-500"><ChevronDown className="h-5 w-5" /></button>
