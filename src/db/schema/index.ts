@@ -1436,6 +1436,73 @@ export const importJobs = sqliteTable("import_jobs", {
 	finishedAt: timestamp("finished_at"),
 }, (t) => [index("import_jobs_user_idx").on(t.userId, t.createdAt), index("import_jobs_status_idx").on(t.status, t.updatedAt)]);
 
+// ---- Local fork: Tasks app (migration 9000_local_tasks). Physical names carry a `local_` prefix so an
+// upstream `tasks` table can never collide with them. See src/lib/tasks/service.ts.
+
+export const taskLists = sqliteTable("local_task_lists", {
+	id: text("id").primaryKey(),
+	userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+	title: text("title").notNull(),
+	/** Rank string (digits and lowercase letters) that sorts the user's lists. */
+	position: text("position").notNull(),
+	createdAt: timestamp("created_at").notNull().$defaultFn(() => new Date()),
+	updatedAt: timestamp("updated_at").notNull().$defaultFn(() => new Date()),
+}, (t) => [index("local_task_lists_user_position_idx").on(t.userId, t.position)]);
+
+export const tasks = sqliteTable("local_tasks", {
+	id: text("id").primaryKey(),
+	userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+	listId: text("list_id").notNull().references(() => taskLists.id, { onDelete: "cascade" }),
+	/**
+	 * One level only: the parent of a subtask never has a parent itself. Deliberately not a foreign key (like
+	 * `drive_items.parent_id`): a restore inserts rows in table order, where a subtask can precede its parent.
+	 * The service deletes subtasks with their parent.
+	 */
+	parentId: text("parent_id"),
+	title: text("title").notNull(),
+	notes: text("notes").notNull().default(""),
+	/** The iCalendar VTODO vocabulary. */
+	status: text("status", { enum: ["needs-action", "completed"] }).notNull().default("needs-action"),
+	completedAt: timestamp("completed_at"),
+	/** Calendar date "YYYY-MM-DD" in `timeZone`; null for an undated task. */
+	dueDate: text("due_date"),
+	/** The due instant; set only when the task has a time of day. */
+	dueAt: timestamp("due_at"),
+	/** IANA zone the date and time were entered in. */
+	timeZone: text("time_zone"),
+	/** When the reminder push is due (derived on write), and when the cron claimed it. */
+	remindAt: timestamp("remind_at"),
+	remindedAt: timestamp("reminded_at"),
+	/** null = not starred; also the "recently starred" sort key. */
+	starredAt: timestamp("starred_at"),
+	/** Rank string among siblings (same list and parent). */
+	position: text("position").notNull(),
+	/** The email this task was made from. */
+	messageId: text("message_id").references(() => messages.id, { onDelete: "set null" }),
+	/** Repeat rule of the open occurrence; maps to RRULE FREQ / INTERVAL / UNTIL / COUNT. null = does not repeat. */
+	repeatFreq: text("repeat_freq", { enum: ["daily", "weekly", "monthly", "yearly"] }),
+	repeatInterval: integer("repeat_interval").notNull().default(1),
+	/** Day of month the series started on, so monthly and yearly steps do not drift after a short month. */
+	repeatAnchorDay: integer("repeat_anchor_day"),
+	/** Last date "YYYY-MM-DD" an occurrence may fall on. */
+	repeatUntil: text("repeat_until"),
+	/** Total occurrences in the series, and the zero-based index of this one. */
+	repeatCount: integer("repeat_count"),
+	repeatIndex: integer("repeat_index").notNull().default(0),
+	/** Shared by every occurrence of one repeating series (the id of its first task). */
+	seriesId: text("series_id"),
+	createdAt: timestamp("created_at").notNull().$defaultFn(() => new Date()),
+	updatedAt: timestamp("updated_at").notNull().$defaultFn(() => new Date()),
+}, (t) => [
+	index("local_tasks_list_parent_position_idx").on(t.listId, t.parentId, t.position),
+	index("local_tasks_user_due_idx").on(t.userId, t.dueDate),
+	index("local_tasks_user_starred_idx").on(t.userId, t.starredAt),
+	index("local_tasks_remind_idx").on(t.remindAt),
+	index("local_tasks_message_idx").on(t.messageId),
+	index("local_tasks_parent_idx").on(t.parentId),
+	index("local_tasks_series_idx").on(t.seriesId, t.repeatIndex),
+]);
+
 export const schema = {
 	users,
 	domains,
@@ -1481,4 +1548,6 @@ export const schema = {
 	agentSendApprovals,
 	mcpKeyMailboxes,
 	importJobs,
+	taskLists,
+	tasks,
 };
