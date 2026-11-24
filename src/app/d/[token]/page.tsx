@@ -3,6 +3,7 @@
 import { use, useEffect, useState } from "react";
 import { ChevronRight, Download } from "@/components/icons";
 import { useLanguage } from "@/components/language-provider";
+import { SourceCodeFooter } from "@/components/source-code-link";
 import { formatDriveSize } from "@/lib/drive/utils";
 import { DrivePreviewBody } from "@/app/(drive)/drive-preview";
 import { driveIconFor, publicContentUrl, sortDriveItems } from "@/app/(drive)/drive-utils";
@@ -28,7 +29,7 @@ export default function PublicDrivePage({ params }: { params: Promise<{ token: s
 		return () => { active = false; };
 	}, [token, itemId]);
 
-	if (missing) return <main className="safe-area flex min-h-dvh items-center justify-center bg-[#f6f8fc] text-center text-neutral-600"><p className="p-6">{t("drive.publicNotFound")}</p></main>;
+	if (missing) return <main className="safe-area flex min-h-dvh flex-col items-center bg-[#f6f8fc] text-center text-neutral-600"><p className="my-auto p-6">{t("drive.publicNotFound")}</p><SourceCodeFooter className="pb-4" /></main>;
 	if (!data) return <main className="safe-area min-h-dvh bg-[#f6f8fc]" aria-busy="true" />;
 	const { item, items, path } = data;
 	const isFile = item.kind === "file";
@@ -51,6 +52,7 @@ export default function PublicDrivePage({ params }: { params: Promise<{ token: s
 					{items.length === 0 ? <p className="p-10 text-center text-sm text-neutral-500">{t("drive.empty")}</p> : sortDriveItems(items, "name", true).map((entry) => <PublicRow key={entry.id} entry={entry} token={token} onOpen={setItemId} />)}
 				</div>
 			)}
+			<SourceCodeFooter className="mt-auto pt-6" />
 		</main>
 	);
 }

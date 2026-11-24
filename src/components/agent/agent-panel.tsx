@@ -22,6 +22,8 @@ import { approveAgentAction, requestDraftReview } from "./client-actions";
 import type { AgentConversation, AgentConversationsResponse, AgentErrorResponse, AgentEvent, AgentHistoryResponse, AgentJob, AgentJobsResponse, AgentMessage, AgentPanelProps, AgentPanelView, AgentSettings, AgentSettingsResponse, QueuedAgentMessage } from "./types";
 import { activeAgentTool, activeAgentToolLabel, appendAgentReasoning, consumeAgentStream, editQueuedAgentMessage, enqueueAgentMessage, groupAgentMessages, isAgentScrollAtBottom, markAgentDraftSent, normalizeAgentHistory, readAgentConversationId, removeQueuedAgentMessage, resizeAgentInput, saveAgentConversationId, shouldSubmitAgentInput, steerQueuedAgentMessage, uniqueAgentDraftActions } from "./utils";
 import { Select } from "@/components/ui/select";
+import { notifyTasksChanged } from "@/lib/tasks/client";
+import { isTaskWriteTool } from "@/lib/tasks/tool-scopes";
 
 export function AgentPanel({ open, fullSize, onClose, onToggleFullSize }: AgentPanelProps) {
 	const { t } = useLanguage();
@@ -272,6 +274,7 @@ export function AgentPanel({ open, fullSize, onClose, onToggleFullSize }: AgentP
 					const content = event.state === "running" ? "" : typeof event.result === "string" ? event.result : JSON.stringify(event.result) ?? "";
 					const toolState = event.state === "running" ? "running" : event.state === "failed" ? "failed" : "used";
 					setMessages((current) => current.some((item) => item.id === toolId) ? current.map((item) => item.id === toolId ? { ...item, toolState, content, recordId: event.recordId } : item) : [...current, { id: toolId, role: "tool", toolName: event.name, toolState, content, recordId: event.recordId }]);
+					if (event.state === "complete" && isTaskWriteTool(event.name)) notifyTasksChanged();
 				}
 				if (event.type === "error") { streamErrored = true; setError(event.message); }
 			});
