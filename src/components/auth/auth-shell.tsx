@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useBranding } from "@/components/branding-provider";
 import { LanguageSelector } from "@/components/language-selector";
+import { SourceCodeLink } from "@/components/source-code-link";
 import type { AuthShellProps } from "./types";
 
 export function AuthShell({
@@ -61,8 +62,9 @@ export function AuthShell({
             )}
           </div>
 
-          <div className="mt-auto hidden pt-8 lg:block">
+          <div className="mt-auto hidden items-center justify-between gap-4 pt-8 lg:flex">
             <LanguageSelector variant="text" />
+            <SourceCodeLink className="text-xs text-neutral-500" />
           </div>
         </section>
 
@@ -91,8 +93,9 @@ export function AuthShell({
               {footer}
             </div>
           )}
-          <div className="mt-auto pt-8 lg:hidden">
+          <div className="mt-auto flex items-center justify-between gap-4 pt-8 lg:hidden">
             <LanguageSelector variant="text" />
+            <SourceCodeLink className="text-xs text-neutral-500" />
           </div>
         </section>
       </main>

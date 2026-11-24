@@ -13,6 +13,7 @@ await build({
 		contents: `
 			export { emailToolSchemas } from "./src/lib/agent/tools.ts";
 			export { calendarToolSchemas } from "./src/lib/calendar/tools.ts";
+			export { taskToolSchemas } from "./src/lib/tasks/tools.ts";
 		`,
 		resolveDir: root,
 		sourcefile: "agent-schema-entry.ts",
@@ -29,7 +30,7 @@ await build({
 	},
 	logLevel: "silent",
 });
-const { emailToolSchemas, calendarToolSchemas } = await import(pathToFileURL(join(bundleDirectory, "entry.mjs")).href);
+const { emailToolSchemas, calendarToolSchemas, taskToolSchemas } = await import(pathToFileURL(join(bundleDirectory, "entry.mjs")).href);
 after(() => rmSync(bundleDirectory, { recursive: true, force: true }));
 
 // streamText sends zodSchema().jsonSchema (draft-07). MCP registerTool sends ~standard.jsonSchema.input (draft-2020-12).
@@ -52,7 +53,7 @@ function patterns(schema, found = []) {
 	return found;
 }
 
-const toolSchemas = { ...emailToolSchemas, ...calendarToolSchemas };
+const toolSchemas = { ...emailToolSchemas, ...calendarToolSchemas, ...taskToolSchemas };
 
 test("list_emails exposes an optional nullable cursor with pagination instructions", () => {
 	assert.equal(emailToolSchemas.list_emails.safeParse({ folder: "inbox", limit: 1 }).success, true);
@@ -90,4 +91,23 @@ test("draft and calendar execution still validate email addresses", () => {
 	assert.equal(calendarToolSchemas.create_event.safeParse({ ...event, attendees: ["owner@example.com"] }).success, true);
 	assert.equal(calendarToolSchemas.update_events.safeParse({ updates: [{ eventId: "evt-1", attendees: ["not-an-email"] }] }).success, false);
 	assert.equal(calendarToolSchemas.update_events.safeParse({ updates: [{ eventId: "evt-1", attendees: ["owner@example.com"] }] }).success, true);
+});
+
+test("task tool schemas tell the model the date and time formats and which fields are optional", () => {
+	for (const json of providerSchemas(taskToolSchemas.create_task)) {
+		assert.equal(json.required?.length ?? 0, 0, "a task can be made from an email alone");
+		assert.equal(json.properties.due.properties.date.pattern, "^\\d{4}-\\d{2}-\\d{2}$");
+		assert.equal(json.properties.due.properties.time.pattern, "^\\d{2}:\\d{2}$");
+		assert.deepEqual(json.properties.due.required, ["date"]);
+		assert.deepEqual(json.properties.repeat.properties.freq.enum, ["daily", "weekly", "monthly", "yearly"]);
+	}
+	for (const json of providerSchemas(taskToolSchemas.update_tasks)) {
+		const item = json.properties.updates.items;
+		assert.deepEqual(item.required, ["taskId"]);
+		assert.equal(json.properties.updates.maxItems, 20);
+		// null clears a due date, a repeat rule or a parent; it must survive into the schema the model sees.
+		for (const key of ["due", "repeat", "parentTaskId", "afterTaskId"]) assert.ok(item.properties[key].anyOf.some((option) => option.type === "null"), key);
+	}
+	assert.equal(taskToolSchemas.list_tasks.parse({}).status, "open");
+	assert.equal(taskToolSchemas.list_tasks.parse({}).limit, 100);
 });

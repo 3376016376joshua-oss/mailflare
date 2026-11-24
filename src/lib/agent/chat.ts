@@ -13,6 +13,7 @@ import { EMAIL_TOOL_NAMES, emailToolDescriptions, emailToolSchemas, runEmailTool
 import type { AgentToolContext } from "./types";
 import { normalizeTimeZone } from "@/lib/time/utils";
 import { CALENDAR_TOOL_NAMES, calendarToolDescriptions, calendarToolSchemas, runCalendarTool } from "@/lib/calendar/tools";
+import { taskChatTools } from "@/lib/tasks/tools";
 
 export async function getAgentConversation(context: AgentToolContext, conversationId: string) {
 	const db = getDb(context.env);
@@ -65,7 +66,7 @@ export async function createAgentChatStream(context: AgentToolContext, text: str
 		description: calendarToolDescriptions[name], inputSchema: calendarToolSchemas[name],
 		execute: async (input: unknown) => runCalendarTool(context, name, input),
 	}])) : {};
-	const result = streamText({ model: selection.model, system: agentSystemPrompt(settings?.instructions ?? "", timeZone), messages: prompt, tools: { ...tools, ...calendarTools }, stopWhen: stepCountIs(7), maxOutputTokens: 1200, abortSignal: signal, onStepFinish: async ({ usage }) => { await recordAiUsage({ env: context.env, details: selection, usage, source: "chat" }); } });
+	const result = streamText({ model: selection.model, system: agentSystemPrompt(settings?.instructions ?? "", timeZone), messages: prompt, tools: { ...tools, ...calendarTools, ...taskChatTools(context) }, stopWhen: stepCountIs(7), maxOutputTokens: 1200, abortSignal: signal, onStepFinish: async ({ usage }) => { await recordAiUsage({ env: context.env, details: selection, usage, source: "chat" }); } });
 	const encoder = new TextEncoder();
 	const id = conversation.id;
 	const stream = new ReadableStream<Uint8Array>({

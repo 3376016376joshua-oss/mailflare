@@ -51,6 +51,10 @@ store `VAPID_PRIVATE_KEY` as a Worker secret. Configure `VAPID_PUBLIC_KEY` and
 public HTTPS URL of the installation. The same VAPID key pair should be kept
 across deployments so existing browser subscriptions remain valid.
 
+### Source code link
+
+Mailflare is licensed under AGPL-3.0. If you run a modified copy that other people use, section 13 of the license asks you to offer them its source. The app shows a **Source code** link in the sidebar footer, the account menu, the sign-in pages and the public booking and shared-file pages. It points to `SOURCE_CODE_URL`, set under `vars` in `wrangler.jsonc`: change it to the repository that holds the code you deploy.
+
 ## Step 3: Complete mailflare setup
 
 1. Open the URL of the deployed `mailflare` Worker.
