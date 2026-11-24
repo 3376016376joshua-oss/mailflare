@@ -1,0 +1,6 @@
+{
+	"tasks.mail.add": "Add to tasks",
+	"tasks.mail.addHint": "Add to tasks (Shift+T)",
+	"tasks.mail.added": "Added to tasks",
+	"tasks.mail.removed": "Task removed"
+}

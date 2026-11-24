@@ -7,6 +7,8 @@ import { normalizeCalendarColor } from "@/lib/calendar/colors";
 import { formatUserDate } from "@/lib/time/utils";
 import { addDays, dateKey, EVENT_COLOR_CLASSES, formatEventRange, isPendingInvite, monthGridDates, PAST_EVENT_COLOR_CLASSES, PENDING_EVENT_CLASSES } from "./utils";
 import type { CalendarEvent } from "./types";
+import { CalendarMonthTaskEntry, monthDayEntries } from "@/components/tasks/calendar-month-tasks";
+import { useCalendarTasks } from "@/components/tasks/use-calendar-tasks";
 
 const MAX_VISIBLE = 3;
 
@@ -25,6 +27,7 @@ export function MonthGrid({ month, today, events, currentTime, onSelectDay, onOp
 	const dates = useMemo(() => monthGridDates(month), [month]);
 	const monthKey = dateKey(month).slice(0, 7);
 	const todayKey = dateKey(today);
+	const tasks = useCalendarTasks(dates, today);
 	const byDay = useMemo(() => {
 		const map = new Map<string, CalendarEvent[]>();
 		for (const day of dates) {
@@ -49,7 +52,7 @@ export function MonthGrid({ month, today, events, currentTime, onSelectDay, onOp
 					const key = dateKey(day);
 					const list = byDay.get(key) ?? [];
 					const outside = key.slice(0, 7) !== monthKey;
-					const extra = list.length - MAX_VISIBLE;
+					const { shown, hidden: extra } = monthDayEntries(tasks, key, list, MAX_VISIBLE);
 					return (
 						<div key={key} className="relative min-h-28 border-b border-l border-neutral-100 p-1">
 							<button type="button" aria-label={t("calendar.addEventOn", { date: formatUserDate(day, { dateStyle: "short" }) })} onClick={() => onSelectDay(day)} className="absolute inset-0 z-0 cursor-pointer" />
@@ -58,7 +61,9 @@ export function MonthGrid({ month, today, events, currentTime, onSelectDay, onOp
 								{formatUserDate(day, { day: "numeric" })}
 							</button>
 							<div className="relative z-10 space-y-0.5">
-								{list.slice(0, MAX_VISIBLE).map((event) => {
+								{shown.map((entry) => {
+									if (entry.kind !== "event") return <CalendarMonthTaskEntry key={entry.key} entry={entry} tasks={tasks} />;
+									const { event } = entry;
 									const color = normalizeCalendarColor(event.color);
 									const past = new Date(event.endsAt).getTime() <= currentTime;
 									return (
