@@ -230,7 +230,7 @@ One tool layer (`src/lib/tasks/tools.ts`, shaped like `src/lib/calendar/tools.ts
 
 ## Source code link
 
-Mailflare is AGPL-3.0, and this copy is modified, so everyone who uses it over the network is offered its source (section 13). `SourceCodeLink` (`src/components/source-code-link.tsx`) renders a "Source code" link in the sidebar footer next to "Powered by" (Mail, Settings, Admin, Drive), in the account menu (every signed-in page, including Calendar and Tasks), on the sign-in pages and the landing page, and on the public booking and shared-file pages. A new shell or public page should include it.
+Mailflare is AGPL-3.0, and this copy is modified, so everyone who uses it over the network is offered its source (section 13). `SourceCodeLink` (`src/components/source-code-link.tsx`) renders a "Source code" link in the sidebar footer next to "Powered by" (Mail, Settings, Admin, Drive, Tasks), in the account menu (every signed-in page, including Calendar and Tasks), on the sign-in pages and the landing page, and on the public booking and shared-file pages. A new shell or public page should include it.
 
 The address is one value, `SOURCE_CODE_URL`: `vars` in `wrangler.jsonc` on Workers, an environment variable when self-hosted. It defaults to `https://github.com/3376016376joshua-oss/mailflare` (`src/lib/source-code.ts`); anything that is not an http(s) URL falls back to the default. The root layout reads it once per request and hands it to the links. Point it at the repository that holds the code actually deployed.
 
