@@ -1,10 +1,12 @@
 /**
  * The list the user last worked in, remembered per browser. Surfaces that add a task without asking
- * where it goes ("Add to tasks" on an email) put it there; surfaces that show a list call
- * `rememberLastTaskList` when the user switches to it or adds a task to it.
+ * where it goes ("Add to tasks" on an email; the add box of Starred, Today, Upcoming or a day) put it
+ * there; surfaces that show a list call `rememberLastTaskList` when the user switches to it or adds a
+ * task to it.
  *
  * The id may name a list that no longer exists (deleted here or on another device), so a caller that
- * sends it must be ready for the API's NOT_FOUND and fall back to the default list.
+ * sends it must either check it against the lists it has (`listForNewTask`) or be ready for the API's
+ * NOT_FOUND and fall back to the default list.
  */
 
 const STORAGE_KEY = "mailflare.tasks.lastList";

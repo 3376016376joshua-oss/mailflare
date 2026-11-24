@@ -10,14 +10,15 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { isPendingId } from "@/lib/tasks/cache-utils";
 import { onTasksOpenPanel, useTask, useTaskLists } from "@/lib/tasks/client";
-import { taskErrorMessage } from "@/lib/tasks/format";
+import { formatTaskDay, taskErrorMessage } from "@/lib/tasks/format";
 import { getLastTaskListId, rememberLastTaskList } from "@/lib/tasks/last-list";
+import { isDateString } from "@/lib/tasks/task-utils";
 import type { TaskView } from "@/lib/tasks/types";
 import { cn } from "@/lib/utils";
 import { taskIconButtonClass, taskMenuClass, taskMenuItemClass } from "./task-controls";
 import { TaskListDialog } from "./task-list-dialog";
 import { TaskListView, focusTaskAddRowOnOpen } from "./task-list-view";
-import { taskScopeHref } from "./task-view-utils";
+import { taskScopeHref, taskScopeKey } from "./task-view-utils";
 import type { TaskScope } from "./task-view-utils";
 import { useTaskListActions } from "./use-task-actions";
 
@@ -48,13 +49,14 @@ export function TasksPanelToggle({ open, onToggle }: { open: boolean; onToggle: 
  * Assistant, one at a time, and starts on the list the user last worked in.
  *
  * Mount it always: closed it renders nothing, but it still listens for `mailflare:tasks-open-panel`
- * (`openTasksPanel({ taskId?, listId?, view? })`), which opens it on that list or view, or on the list
- * of that task with the cursor in it.
+ * (`openTasksPanel({ taskId?, listId?, view?, date? })`), which opens it on that list, view or day, or
+ * on the list of that task with the cursor in it.
  */
 export function TasksPanel({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
 	const { t } = useLanguage();
 	const [listId, setListId] = useState<string | null>(() => getLastTaskListId() ?? null);
-	const [view, setView] = useState<TaskView | null>(null);
+	// A smart view or a day, shown instead of the list until the user picks a list again.
+	const [across, setAcross] = useState<Exclude<TaskScope, { kind: "list" }> | null>(null);
 	const [focusId, setFocusId] = useState<string | null>(null);
 	const [creating, setCreating] = useState(false);
 	const { data, isPending, isError, error, refetch } = useTaskLists({ enabled: open });
@@ -70,12 +72,12 @@ export function TasksPanel({ open, onOpenChange }: { open: boolean; onOpenChange
 	// A task asked for by id brings its own list with it.
 	const wantedListId = (focusId && focusTask.data?.listId) || listId;
 	const list = lists.find((candidate) => candidate.id === wantedListId) ?? lists[0] ?? null;
-	const scope: TaskScope | null = view && (!focusId || focusMissing) ? { kind: "view", view } : list ? { kind: "list", listId: list.id } : null;
-	const title = scope?.kind === "view" ? t(VIEWS.find((item) => item.view === scope.view)!.labelKey) : list?.title ?? t("tasks.title");
+	const scope: TaskScope | null = across && (!focusId || focusMissing) ? across : list ? { kind: "list", listId: list.id } : null;
+	const title = scope?.kind === "view" ? t(VIEWS.find((item) => item.view === scope.view)!.labelKey) : scope?.kind === "date" ? formatTaskDay(scope.date) : list?.title ?? t("tasks.title");
 
 	function selectList(id: string) {
 		setListId(id);
-		setView(null);
+		setAcross(null);
 		setFocusId(null);
 		rememberLastTaskList(id);
 	}
@@ -83,14 +85,17 @@ export function TasksPanel({ open, onOpenChange }: { open: boolean; onOpenChange
 	useEffect(() => onTasksOpenPanel((detail) => {
 		if (detail.taskId) {
 			setFocusId(detail.taskId);
-			setView(null);
+			setAcross(null);
 		} else if (detail.listId) {
 			setListId(detail.listId);
-			setView(null);
+			setAcross(null);
 			setFocusId(null);
 			rememberLastTaskList(detail.listId);
 		} else if (detail.view) {
-			setView(detail.view);
+			setAcross({ kind: "view", view: detail.view });
+			setFocusId(null);
+		} else if (isDateString(detail.date)) {
+			setAcross({ kind: "date", date: detail.date });
 			setFocusId(null);
 		}
 		onOpenChange(true);
@@ -122,7 +127,7 @@ export function TasksPanel({ open, onOpenChange }: { open: boolean; onOpenChange
 									))}
 									<DropdownMenu.Separator className="my-1 h-px bg-neutral-100" />
 									{VIEWS.map(({ view: item, labelKey, icon: Icon }) => (
-										<DropdownMenu.Item key={item} className={cn(taskMenuItemClass, scope.kind === "view" && scope.view === item && "font-medium text-blue-700")} onSelect={() => { setView(item); setFocusId(null); }}>
+										<DropdownMenu.Item key={item} className={cn(taskMenuItemClass, scope.kind === "view" && scope.view === item && "font-medium text-blue-700")} onSelect={() => { setAcross({ kind: "view", view: item }); setFocusId(null); }}>
 											<Icon size={16} aria-hidden="true" className="shrink-0" />{t(labelKey)}
 										</DropdownMenu.Item>
 									))}
@@ -140,13 +145,14 @@ export function TasksPanel({ open, onOpenChange }: { open: boolean; onOpenChange
 			</header>
 			{scope ? (
 				<TaskListView
-					key={scope.kind === "list" ? scope.listId : scope.view}
+					key={taskScopeKey(scope)}
 					scope={scope}
 					lists={lists}
 					variant="panel"
 					focusTaskId={focusMissing ? null : focusId}
 					onFocusHandled={() => { if (focusTask.data) selectList(focusTask.data.listId); else setFocusId(null); }}
 					onOpenList={selectList}
+					onOpenTask={(taskId) => { setFocusId(taskId); setAcross(null); }}
 				/>
 			) : isPending ? (
 				<div aria-hidden="true" className="space-y-3 p-5">{Array.from({ length: 4 }, (_, index) => <Skeleton key={index} className="h-4" style={{ width: `${80 - index * 12}%` }} />)}</div>

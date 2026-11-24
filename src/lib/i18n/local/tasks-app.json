@@ -47,6 +47,8 @@
 	"tasks.app.emptyUpcomingHint": "Tasks with a later due date show up here.",
 	"tasks.app.emptyStarred": "No starred tasks",
 	"tasks.app.emptyStarredHint": "Star a task to find it here.",
+	"tasks.app.emptyDate": "Nothing due on this day",
+	"tasks.app.emptyDateHint": "Tasks that are due on this day show up here.",
 	"tasks.app.schedule.title": "Date and time",
 	"tasks.app.schedule.nextWeek": "Next week",
 	"tasks.app.schedule.date": "Date",

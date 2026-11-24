@@ -32,6 +32,8 @@ export type CalendarTasks = {
 	open: (item: CalendarTaskItem) => void;
 	/** Shows the overdue tasks in the Tasks panel. */
 	openPending: () => void;
+	/** Shows the tasks of one day ("YYYY-MM-DD") in the Tasks panel. */
+	openDay: (date: string) => void;
 };
 
 /** How long the toast that follows a task leaving the calendar offers Undo. */
@@ -102,6 +104,7 @@ export function useCalendarTasks(days: readonly Date[], today: Date): CalendarTa
 		if (!item.saving) openTasksPanel({ taskId: item.taskId });
 	}, []);
 	const openPending = useCallback(() => openTasksPanel({ view: "today" }), []);
+	const openDay = useCallback((date: string) => openTasksPanel({ date }), []);
 
-	return { byDay, todayKey: dateKey(today), pendingCount, toggle, open, openPending };
+	return { byDay, todayKey: dateKey(today), pendingCount, toggle, open, openPending, openDay };
 }

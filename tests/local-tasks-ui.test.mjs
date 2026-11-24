@@ -163,24 +163,57 @@ test("lists reorder by drop position and by keyboard", () => {
 
 // ---- What is on screen ----
 
-test("the URL names a view, a list, or falls back to the first list", () => {
+test("the URL names a view, a day, a list, or falls back to the first list", () => {
 	const ids = ["l1", "l2"];
 	assert.deepEqual(view.resolveTaskScope({ view: "today", list: "l2" }, ids), { kind: "view", view: "today" });
 	assert.deepEqual(view.resolveTaskScope({ view: "nonsense", list: "l2" }, ids), { kind: "list", listId: "l2" });
 	assert.deepEqual(view.resolveTaskScope({ view: null, list: "deleted" }, ids), { kind: "list", listId: "l1" });
 	assert.equal(view.resolveTaskScope({ view: null, list: null }, []), null);
+	assert.deepEqual(view.resolveTaskScope({ view: null, date: "2026-11-24", list: "l2" }, ids), { kind: "date", date: "2026-11-24" });
+	assert.deepEqual(view.resolveTaskScope({ view: "starred", date: "2026-11-24", list: null }, ids), { kind: "view", view: "starred" });
+	assert.deepEqual(view.resolveTaskScope({ view: null, date: "2026-02-30", list: "l2" }, ids), { kind: "list", listId: "l2" }, "not a date");
 	assert.equal(view.taskScopeHref({ kind: "list", listId: "l 1" }), "/tasks?list=l+1");
 	assert.equal(view.taskScopeHref({ kind: "view", view: "upcoming" }, "tsk_9"), "/tasks?view=upcoming&task=tsk_9");
+	assert.equal(view.taskScopeHref({ kind: "date", date: "2026-11-24" }), "/tasks?date=2026-11-24");
 	assert.equal(view.taskScopeHref(null), "/tasks");
 	assert.deepEqual(view.taskScopeQuery({ kind: "view", view: "starred" }), { view: "starred" });
 	assert.deepEqual(view.taskScopeQuery({ kind: "list", listId: "l1" }), { listId: "l1" });
+	// A day is the window the calendar asks for, one day long.
+	assert.deepEqual(view.taskScopeQuery({ kind: "date", date: "2026-11-24" }), { dueFrom: "2026-11-24", dueTo: "2026-11-24" });
+	assert.deepEqual([{ kind: "list", listId: "l1" }, { kind: "view", view: "today" }, { kind: "date", date: "2026-11-24" }].map(view.taskScopeKey), ["l1", "today", "2026-11-24"]);
 });
 
-test("a task added from a smart view starts with a date that keeps it there", () => {
+test("a task added from a smart view or a day starts with a date that keeps it there", () => {
 	assert.equal(view.defaultDueDateForScope({ kind: "view", view: "today" }, "2026-11-24"), "2026-11-24");
 	assert.equal(view.defaultDueDateForScope({ kind: "view", view: "upcoming" }, "2026-11-30"), "2026-12-01");
 	assert.equal(view.defaultDueDateForScope({ kind: "view", view: "starred" }, "2026-11-24"), null);
 	assert.equal(view.defaultDueDateForScope({ kind: "list", listId: "l1" }, "2026-11-24"), null);
+	assert.equal(view.defaultDueDateForScope({ kind: "date", date: "2026-12-05" }, "2026-11-24"), "2026-12-05");
+});
+
+test("a task added outside a list goes to the last-used list, else to the first", () => {
+	const ids = ["l1", "l2", "l3"];
+	assert.equal(view.listForNewTask(ids, "l3"), "l3");
+	assert.equal(view.listForNewTask(ids, undefined), "l1", "nothing remembered yet");
+	assert.equal(view.listForNewTask(ids, "deleted"), "l1", "the remembered list is gone");
+	assert.equal(view.listForNewTask([], "l3"), undefined, "no lists loaded: the API picks");
+});
+
+test("a day lists its open tasks and the repeating tasks coming up on it, in the order of the day", () => {
+	const anyTime = task({ title: "any time", dueDate: "2026-11-27" });
+	const five = task({ title: "9:05", dueDate: "2026-11-27", dueAt: "2026-11-27T09:05:00.000Z" });
+	const ten = task({ title: "9:10", dueDate: "2026-11-27", dueAt: "2026-11-27T09:10:00.000Z" });
+	const repeating = task({ id: "tsk_r", title: "stand-up", dueDate: "2026-11-25", dueAt: "2026-11-25T09:05:00.000Z" });
+	const occurrence = (dueDate, dueAt) => ({ id: `${repeating.id}@${dueDate}`, taskId: repeating.id, listId: repeating.listId, title: repeating.title, starred: false, dueDate, dueAt, timeZone: "UTC", repeatIndex: 2 });
+	const entries = view.taskDayEntries([anyTime, five, ten], [occurrence("2026-11-27", "2026-11-27T09:05:00.000Z")], "UTC");
+	// The occurrence is due with "9:05": the task comes first.
+	assert.deepEqual(entries.map((entry) => [entry.kind, entry.kind === "task" ? entry.task.title : entry.occurrence.title, entry.key]), [
+		["task", "any time", anyTime.id], ["task", "9:05", five.id], ["occurrence", "stand-up", "tsk_r@2026-11-27"], ["task", "9:10", ten.id],
+	]);
+	assert.deepEqual(Object.keys(entries[0]).sort(), ["key", "kind", "task"]);
+	// An occurrence without a time sits with the tasks without one.
+	assert.deepEqual(view.taskDayEntries([five], [occurrence("2026-11-27", null)], "UTC").map((entry) => entry.kind), ["occurrence", "task"]);
+	assert.deepEqual(view.taskDayEntries([], [], "UTC"), []);
 });
 
 test("Today is cut into Overdue and today; Upcoming into one section per date", () => {

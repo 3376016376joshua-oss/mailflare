@@ -416,6 +416,9 @@ test("tasks changed elsewhere, in this tab or another, are refetched", async () 
 		const stop = page.client.onTasksOpenPanel((detail) => { opened = detail; });
 		page.client.openTasksPanel({ taskId: "tsk_9", listId: LIST });
 		assert.deepEqual(opened, { taskId: "tsk_9", listId: LIST });
+		// A day, as the calendar's "N tasks" chip asks for.
+		page.client.openTasksPanel({ date: "2026-11-24" });
+		assert.deepEqual(opened, { date: "2026-11-24" });
 		page.client.openTasksPanel();
 		assert.deepEqual(opened, {});
 		stop();

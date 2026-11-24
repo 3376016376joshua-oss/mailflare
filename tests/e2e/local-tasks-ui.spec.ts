@@ -368,6 +368,107 @@ test("the Tasks panel opens in Mail and Calendar, one panel at a time, and on re
 	await expect(page).not.toHaveURL(/task=/);
 });
 
+test("a task added in Starred, Today or Upcoming goes to the list used last", async ({ page }) => {
+	const { createList, tasks, lists } = api(page);
+	const main = (await lists())[0];
+	const errands = await createList("Errands");
+	const created = async (title: string) => (await tasks("completed=0")).find((task) => task.title === title);
+
+	// Nothing is remembered in a fresh browser: the first list.
+	await page.goto("/tasks?view=starred");
+	const add = page.getByRole("textbox", { name: "Add a task" });
+	await add.fill("Before any list");
+	await add.press("Enter");
+	await expect.poll(async () => (await created("Before any list"))?.listId).toBe(main.id);
+
+	// Opening a list makes it the one used last, and every smart view adds to it.
+	await page.getByRole("navigation", { name: "Lists" }).getByRole("link", { name: /Errands/ }).click();
+	await expect(page.getByRole("heading", { name: "Errands", level: 1 })).toBeVisible();
+	for (const [view, title] of [["Starred", "A starred errand"], ["Today", "An errand for today"], ["Upcoming", "An errand for tomorrow"]]) {
+		await page.getByRole("navigation", { name: "Views" }).getByRole("link", { name: view }).click();
+		await expect(page.getByRole("heading", { name: view, level: 1 })).toBeVisible();
+		await add.fill(title);
+		await add.press("Enter");
+		await expect.poll(async () => (await created(title))?.listId).toBe(errands.id);
+		// The row says where the task went.
+		await expect(row(page, (await created(title))!.id).getByRole("link", { name: "Errands" })).toBeVisible();
+	}
+	expect(await created("A starred errand")).toMatchObject({ starred: true, dueDate: null });
+	expect((await created("An errand for today"))?.dueDate).not.toBeNull();
+
+	// The side panel follows the same rule.
+	await page.goto("/inbox");
+	await page.locator('[aria-controls="tasks-side-panel"]').click();
+	const panel = page.locator("#tasks-side-panel");
+	await panel.getByRole("button", { name: /^List: Errands/ }).click();
+	await page.getByRole("menuitem", { name: "Today" }).click();
+	const panelAdd = panel.getByRole("textbox", { name: "Add a task" });
+	await panelAdd.fill("From the panel's Today");
+	await panelAdd.press("Enter");
+	await expect.poll(async () => (await created("From the panel's Today"))?.listId).toBe(errands.id);
+
+	// A remembered list that is gone (deleted on another device) falls back to the first list.
+	await page.evaluate(() => window.localStorage.setItem("mailflare.tasks.lastList", "tl_gone"));
+	await panelAdd.fill("After the list was deleted");
+	await panelAdd.press("Enter");
+	await expect.poll(async () => (await created("After the list was deleted"))?.listId).toBe(main.id);
+});
+
+test("crowded timed tasks merge into one chip on the calendar, which opens their day in the panel", async ({ page }) => {
+	const { create, tasks } = api(page);
+	await page.setViewportSize({ width: 1280, height: 800 });
+	await page.goto("/calendar");
+	// Today in the browser's zone, which is the zone the calendar draws in.
+	const { date, timeZone } = await page.evaluate(() => {
+		const now = new Date();
+		const pad = (value: number) => String(value).padStart(2, "0");
+		return { date: `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone };
+	});
+	// Three tasks within twenty minutes, and one with the morning to itself.
+	for (const [title, time] of [["Send invoice", "12:20"], ["Call the bank", "12:15"], ["Book flights", "12:00"], ["Water the plants", "08:00"]]) await create({ title, due: { date, time, timeZone } });
+	await page.reload();
+	const options = page.getByRole("button", { name: "Calendar options" });
+	await options.click();
+	await page.getByRole("menuitem", { name: "Week" }).click();
+
+	// A week column cannot show three chips side by side: they are one chip, in time order.
+	const grid = page.getByRole("main");
+	const merged = grid.getByRole("button", { name: "3 tasks: Book flights, Call the bank, Send invoice" });
+	await expect(merged).toBeVisible();
+	await expect(merged).toHaveText("3 tasks");
+	await expect(grid.getByRole("checkbox", { name: 'Mark "Book flights" complete' })).toHaveCount(0);
+	// A task with room to itself is drawn as before.
+	await expect(grid.getByRole("checkbox", { name: 'Mark "Water the plants" complete' })).toBeVisible();
+	expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1280);
+
+	// The chip opens the Tasks panel on that day: every task due then, in the order of the day.
+	await merged.click();
+	const panel = page.locator("#tasks-side-panel");
+	await expect(panel).toBeVisible();
+	await expect(panel.getByRole("button", { name: /^List: \w{3}, \w{3} \d{1,2}\./ })).toBeVisible();
+	await expect.poll(() => shownTitles(page)).toEqual(["Water the plants", "Book flights", "Call the bank", "Send invoice"]);
+	await expect(panel.getByRole("link", { name: "Open in Tasks" })).toHaveAttribute("href", `/tasks?date=${date}`);
+	// The panel takes room from the columns; the tasks stay merged.
+	await expect(merged).toBeVisible();
+
+	// A task added to a day is due that day.
+	const add = panel.getByRole("textbox", { name: "Add a task" });
+	await add.fill("Also today");
+	await add.press("Enter");
+	await expect.poll(async () => (await tasks(`dueFrom=${date}&dueTo=${date}`)).find((task) => task.title === "Also today")?.dueDate).toBe(date);
+
+	// The day view has room for the three, each with its own checkbox.
+	await options.click();
+	await page.getByRole("menuitem", { name: "Day" }).click();
+	await expect(grid.getByRole("checkbox", { name: 'Mark "Book flights" complete' })).toBeVisible();
+	await expect(grid.getByRole("checkbox", { name: 'Mark "Send invoice" complete' })).toBeVisible();
+	await expect(grid.getByRole("button", { name: /^3 tasks/ })).toHaveCount(0);
+
+	// The same day in the Tasks app.
+	await page.goto(`/tasks?date=${date}`);
+	await expect.poll(() => shownTitles(page)).toEqual(["Also today", "Water the plants", "Book flights", "Call the bank", "Send invoice"]);
+});
+
 test("on a phone the menu drawer holds the lists and the panel covers the page", async ({ page }) => {
 	const { createList, create } = api(page);
 	const errands = await createList("Errands");

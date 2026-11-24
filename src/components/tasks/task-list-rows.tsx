@@ -2,15 +2,15 @@
 
 import { memo, useEffect, useRef, useState } from "react";
 import type { Ref } from "react";
-import { Plus, Trash2 } from "@/components/icons";
+import { CalendarDays, Plus, Repeat2, Trash2 } from "@/components/icons";
 import { useLanguage } from "@/components/language-provider";
 import { confirmDestructive } from "@/components/ui/confirm-dialog";
 import { isPendingId } from "@/lib/tasks/cache-utils";
 import { TASK_TITLE_MAX } from "@/lib/tasks/task-utils";
-import type { Task } from "@/lib/tasks/types";
+import type { Task, TaskOccurrence } from "@/lib/tasks/types";
 import { formatUserDate } from "@/lib/time/utils";
 import { cn } from "@/lib/utils";
-import { TaskCheckbox, taskIconButtonClass } from "./task-controls";
+import { TaskCheckbox, TaskChip, taskIconButtonClass } from "./task-controls";
 import type { TaskActions } from "./use-task-actions";
 
 /**
@@ -77,6 +77,33 @@ export function TaskAddRow({ placeholder, onAdd, onCancel, autoFocus, inputRef, 
 				className="h-9 min-w-0 flex-1 bg-transparent text-sm text-neutral-900 placeholder:text-neutral-500 focus:outline-none disabled:cursor-not-allowed"
 			/>
 		</form>
+	);
+}
+
+/**
+ * A future occurrence of a repeating task among the tasks of a day. There is no row to check off yet, so
+ * it shows a repeat mark instead of a checkbox, and its title leads to the open task that repeats.
+ */
+export function TaskOccurrenceRow({ occurrence, due, listTitle, onOpen }: { occurrence: TaskOccurrence; due: string | null; listTitle?: string; onOpen?: (taskId: string) => void }) {
+	const { t } = useLanguage();
+	return (
+		<div className="flex items-start rounded-2xl pr-1 transition-colors hover:bg-neutral-100/70">
+			<span aria-hidden="true" className="w-1.5 shrink-0" />
+			<span role="img" aria-label={t("tasks.calendar.repeats")} title={t("tasks.calendar.repeats")} className="flex h-9 w-9 shrink-0 items-center justify-center text-neutral-500"><Repeat2 size={16} aria-hidden="true" /></span>
+			<div className="min-w-0 flex-1">
+				<div className="py-2 pr-1">
+					{onOpen
+						? <button type="button" onClick={() => onOpen(occurrence.taskId)} className="block max-w-full break-words rounded text-left text-sm leading-5 text-neutral-900 hover:underline focus-visible:outline-2 focus-visible:outline-blue-600">{occurrence.title}</button>
+						: <p className="break-words text-sm leading-5 text-neutral-900">{occurrence.title}</p>}
+				</div>
+				{(due || listTitle) && (
+					<div className="flex min-w-0 flex-wrap items-center gap-1.5 pb-2">
+						{due && <TaskChip icon={<CalendarDays size={12} aria-hidden="true" className="shrink-0" />}>{due}</TaskChip>}
+						{listTitle && <TaskChip className="max-w-[12rem] border-transparent bg-neutral-100">{listTitle}</TaskChip>}
+					</div>
+				)}
+			</div>
+		</div>
 	);
 }
 
