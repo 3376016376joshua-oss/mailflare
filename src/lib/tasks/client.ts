@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { authFetch } from "@/lib/auth/client";
+import { MESSAGES_CHANGED_EVENT, getMessagesChangedDetail } from "@/lib/messages/change-events";
 import { getUserTimeZone } from "@/lib/time/utils";
 import {
 	PENDING_TASK_PREFIX, adjustOpenCounts, applyListUpdate, applyTaskMove, applyTaskUpdate, isPendingId, optimisticTask, removeTasksFromResponse, upsertTaskInResponse,
@@ -214,7 +215,7 @@ function settle(client: QueryClient): void {
 
 const listeners = new WeakMap<QueryClient, { count: number; stop: () => void }>();
 
-/** Refetches cached tasks when they change outside the hooks (`notifyTasksChanged`) or in another tab. */
+/** Refetches cached tasks when they change outside the hooks (`notifyTasksChanged`) or in another tab, and when mail is deleted for good. */
 function useTasksSync(): void {
 	const client = useQueryClient();
 	useEffect(() => {
@@ -224,11 +225,19 @@ function useTasksSync(): void {
 			const onChanged = (event: Event) => {
 				if (!(event as CustomEvent<TasksChangedDetail>).detail?.fromHooks) refetch();
 			};
+			// A task names its email only while that email exists, so mail deleted for good takes the link with it.
+			// The mail screens say so with `action: "delete"`; emptying Trash or Spam only says that mail changed.
+			const onMailChanged = (event: Event) => {
+				const detail = getMessagesChangedDetail(event);
+				if (!detail || detail.action === "delete") refetch();
+			};
 			const tabs = tabsChannel();
 			window.addEventListener(TASKS_CHANGED_EVENT, onChanged);
+			window.addEventListener(MESSAGES_CHANGED_EVENT, onMailChanged);
 			tabs?.addEventListener("message", refetch);
 			entry.stop = () => {
 				window.removeEventListener(TASKS_CHANGED_EVENT, onChanged);
+				window.removeEventListener(MESSAGES_CHANGED_EVENT, onMailChanged);
 				tabs?.removeEventListener("message", refetch);
 			};
 			listeners.set(client, entry);

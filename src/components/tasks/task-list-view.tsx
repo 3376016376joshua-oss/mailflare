@@ -30,6 +30,14 @@ export function focusTaskAddRow(): void {
 	window.dispatchEvent(new Event(TASKS_FOCUS_ADD_EVENT));
 }
 
+// The list that was just created. It is not on screen yet when its creator asks, so the request waits here.
+let focusAddOnOpen: string | null = null;
+
+/** Asks this list to open with the cursor in its "Add a task" box: a new list is empty, and adding to it is what comes next. */
+export function focusTaskAddRowOnOpen(listId: string): void {
+	focusAddOnOpen = listId;
+}
+
 const SUBTASK_INDENT = 28;
 const MOVED_KEYS = { up: "tasks.app.movedUp", down: "tasks.app.movedDown", in: "tasks.app.movedIn", out: "tasks.app.movedOut" } as const;
 const EMPTY_KEYS = {
@@ -148,6 +156,14 @@ export function TaskListView({ scope, lists, variant = "page", focusTaskId, onFo
 		window.addEventListener(TASKS_FOCUS_ADD_EVENT, focusAdd);
 		return () => window.removeEventListener(TASKS_FOCUS_ADD_EVENT, focusAdd);
 	}, [listensForCreate]);
+
+	// A list that was just created opens with the cursor in the box, which is disabled until the list has loaded.
+	useEffect(() => {
+		if (isPending || scope.kind !== "list" || focusAddOnOpen !== scopeKey) return;
+		focusAddOnOpen = null;
+		addRef.current?.focus();
+		// eslint-disable-next-line react-hooks/exhaustive-deps -- a scope is fully named by its kind and key
+	}, [isPending, scope.kind, scopeKey]);
 
 	const focusTarget = focusTaskId ? tasks.find((task) => task.id === focusTaskId) : undefined;
 	const focusCompleted = focusTarget?.status === "completed";

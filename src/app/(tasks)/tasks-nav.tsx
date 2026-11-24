@@ -9,7 +9,7 @@ import { useLanguage } from "@/components/language-provider";
 import { PoweredBy } from "@/components/sidebar-footer";
 import { useSidebar } from "@/components/sidebar-state";
 import { TaskListDialog } from "@/components/tasks/task-list-dialog";
-import { focusTaskAddRow } from "@/components/tasks/task-list-view";
+import { focusTaskAddRow, focusTaskAddRowOnOpen } from "@/components/tasks/task-list-view";
 import { isSameListSpot, keyboardListMove, resolveListDrop } from "@/components/tasks/task-order-utils";
 import { resolveTaskScope, taskScopeHref } from "@/components/tasks/task-view-utils";
 import { useKeepFocus } from "@/components/tasks/use-keep-focus";
@@ -134,7 +134,7 @@ export function TasksNav({ onNavigate }: { onNavigate?: () => void }) {
 				</nav>
 			</div>
 			{!compact && <div className="shrink-0 border-t border-neutral-200/70 px-4 py-3"><PoweredBy className="" /></div>}
-			{creating && <TaskListDialog onClose={() => setCreating(false)} onSubmit={(title) => listActions.create(title, (list) => { rememberLastTaskList(list.id); router.push(taskScopeHref({ kind: "list", listId: list.id })); onNavigate?.(); })} />}
+			{creating && <TaskListDialog onClose={() => setCreating(false)} onSubmit={(title) => listActions.create(title, (list) => { rememberLastTaskList(list.id); focusTaskAddRowOnOpen(list.id); router.push(taskScopeHref({ kind: "list", listId: list.id })); onNavigate?.(); })} />}
 			{overlay}
 		</div>
 	);
