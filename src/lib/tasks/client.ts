@@ -10,7 +10,7 @@ import {
 import type { ViewerClock } from "./cache-utils";
 import { rankBetween } from "./task-utils";
 import type {
-	CreateTaskInput, CreateTaskListInput, MoveTaskInput, Task, TaskErrorCode, TaskList, TaskListsResponse, TaskMutationResponse, TaskQuery, TasksResponse,
+	CreateTaskInput, CreateTaskListInput, MoveTaskInput, Task, TaskErrorCode, TaskList, TaskListsResponse, TaskMutationResponse, TaskQuery, TasksResponse, TaskView,
 	UpdateTaskInput, UpdateTaskListInput,
 } from "./types";
 
@@ -31,10 +31,11 @@ export { isPendingId } from "./cache-utils";
  * the hooks listens with `onTasksChanged`.
  */
 export const TASKS_CHANGED_EVENT = "mailflare:tasks-changed";
-/** Asks the Tasks side panel to open, optionally on a list or with a task in focus. Detail: `TasksOpenPanelDetail`. */
+/** Asks the Tasks side panel to open, optionally on a list, a smart view or with a task in focus. Detail: `TasksOpenPanelDetail`. */
 export const TASKS_OPEN_PANEL_EVENT = "mailflare:tasks-open-panel";
 
-export type TasksOpenPanelDetail = { taskId?: string; listId?: string };
+/** `view` is a hint: a panel without smart views just opens. */
+export type TasksOpenPanelDetail = { taskId?: string; listId?: string; view?: TaskView };
 type TasksChangedDetail = { fromHooks?: boolean };
 
 const CHANNEL_NAME = "mailflare-tasks";
@@ -65,7 +66,7 @@ export function onTasksChanged(listener: () => void): () => void {
 	return () => window.removeEventListener(TASKS_CHANGED_EVENT, listener);
 }
 
-/** Open the Tasks side panel (where one is mounted: Mail and Calendar), optionally on a list or a task. */
+/** Open the Tasks side panel (where one is mounted: Mail and Calendar), optionally on a list, a smart view or a task. */
 export function openTasksPanel(detail: TasksOpenPanelDetail = {}): void {
 	window.dispatchEvent(new CustomEvent<TasksOpenPanelDetail>(TASKS_OPEN_PANEL_EVENT, { detail }));
 }

@@ -40,6 +40,9 @@ import {
 import clsx from "clsx";
 import { DialogFrame } from "@/components/dialog-frame";
 import { Select } from "@/components/ui/select";
+import { CalendarDayTasks } from "@/components/tasks/calendar-day-tasks";
+import { CalendarTaskMenuItems } from "@/components/tasks/calendar-task-menu-items";
+import { CalendarTaskStrip } from "@/components/tasks/calendar-task-strip";
 
 const eventFieldClass = "h-9 border-transparent bg-transparent px-2 shadow-none hover:bg-white/60 focus:border-blue-600 focus:bg-white focus:shadow-sm";
 // The header slot is a node in the layout; it never changes once mounted, so there is nothing to subscribe to.
@@ -542,6 +545,7 @@ export default function CalendarPage() {
                     <DropdownMenu.Separator className="my-1 h-px bg-neutral-100" />
                     <DropdownMenu.Label className="px-3 pb-1 pt-2 text-xs font-medium text-neutral-500">{t("calendar.view")}</DropdownMenu.Label>
                     {(["month", "week", "day"] as const).map((option) => <DropdownMenu.Item key={option} onSelect={() => chooseView(option)} className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-neutral-700 outline-none data-[highlighted]:bg-neutral-100"><span className="flex h-4 w-4 shrink-0 items-center justify-center">{view === option && <Check className="h-4 w-4 text-blue-600" />}</span>{t(`calendar.${option}`)}</DropdownMenu.Item>)}
+                    <CalendarTaskMenuItems />
                   </DropdownMenu.Content>
                 </DropdownMenu.Portal>
               </DropdownMenu.Root>
@@ -570,6 +574,7 @@ export default function CalendarPage() {
                 </div>
               ))}
             </div>
+            <CalendarTaskStrip days={days} today={today} />
           <div className="grid" style={{ gridTemplateColumns: `64px repeat(${days.length}, minmax(0, 1fr))`, height: (CALENDAR_END_HOUR - CALENDAR_START_HOUR) * CALENDAR_HOUR_HEIGHT }}>
             <div className="relative">
               {Array.from({ length: CALENDAR_END_HOUR - CALENDAR_START_HOUR }, (_, index) => (
@@ -596,6 +601,7 @@ export default function CalendarPage() {
                 <DayEvents day={day} events={events} currentTime={currentTime} busy={busy} activeEventId={activeEventId}
                   onEdit={onEditEvent} onDragStart={onEventDragStart} onDragEnd={onEventDragEnd}
                   onResizeStart={onResizeStart} onResizeMove={onResizeMove} onResizeEnd={onResizeEnd} onResizeCancel={onResizeCancel} />
+                <CalendarDayTasks day={day} days={days} today={today} events={events} />
                 {dragPreview && previewEvent && previewPosition && dateKey(dragPreview.day) === dateKey(day) && (
                   <div className={`pointer-events-none absolute left-1 right-1 z-20 rounded-lg border-2 border-dashed border-white ${new Date(previewEvent.endsAt).getTime() <= currentTime ? PAST_EVENT_COLOR_CLASSES[normalizeCalendarColor(previewEvent.color)] : EVENT_COLOR_CLASSES[normalizeCalendarColor(previewEvent.color)]}`}
                     style={{ top: previewPosition.top, height: previewPosition.height }}>
