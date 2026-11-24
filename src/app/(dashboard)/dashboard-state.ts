@@ -3,6 +3,7 @@
 import { useEffect, useLayoutEffect, useState } from "react";
 import { fetchCurrentUser } from "@/hooks/use-current-user";
 import { readInitialAssistantPanelState, saveAssistantPanelState } from "./dashboard-state-utils";
+import { useExclusiveTasksPanel } from "@/components/tasks/tasks-panel-state";
 
 export function useDashboardState() {
 	const [assistantOpen, setAssistantOpen] = useState(false);
@@ -40,5 +41,5 @@ export function useDashboardState() {
 		saveAssistantPanelState(assistantOpen, assistantFullSize, storagePrefix);
 	}, [panelRestored, storagePrefix, assistantOpen, assistantFullSize]);
 
-	return { assistantOpen, setAssistantOpen, assistantFullSize, setAssistantFullSize };
+	return useExclusiveTasksPanel({ assistantOpen, setAssistantOpen, assistantFullSize, setAssistantFullSize }, storagePrefix);
 }

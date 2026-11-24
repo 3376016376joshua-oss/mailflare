@@ -172,6 +172,24 @@ For code that cannot use hooks, `tasksApi` has the same calls as plain functions
 
 **Display helpers** (`format.ts`): `formatTaskDue(task, t)` ("Today", "Tomorrow", "Friday", "Nov 30", plus the time of a timed task), `describeTaskRepeat(repeat, t)` ("Weekly", "Every 2 weeks, 5 times"), `taskErrorMessage(error, t, fallback?)`. `isTaskOverdue(task, now, timeZone)` and `compareTasksByDue` are in `task-utils.ts`.
 
+## Screens
+
+The `/tasks` app and the side panel are built from the same parts in `src/components/tasks/`. Reuse them rather than drawing tasks again.
+
+| Part | What it is |
+| --- | --- |
+| `TaskListView` (`task-list-view.tsx`) | The tasks of one list or smart view (`scope`): the "Add a task" box, the open tasks, the collapsed Completed section. In a list, tasks are dragged by their handle to reorder and to nest one level (a step to the right nests); with the handle focused the arrow keys do the same (up, down, right = make a subtask, left = back to the top level). `focusTaskId` scrolls to a task and puts the cursor in it |
+| `TaskRow`, `CompletedTaskRow`, `TaskAddRow` | One task: checkbox, title and notes edited in place, due date, repeat rule and email as chips, star, menu. The email chip opens `/inbox/<messageId>` |
+| `TaskScheduleDialog` | Date, optional time, and the repeat rule (every N days / weeks / months / years; ends never, on a date, or after N times). It sends only what changed |
+| `TasksPanel`, `TasksPanelToggle` (`tasks-panel.tsx`) | The side panel and its header button. The panel listens for `mailflare:tasks-open-panel` and starts on the last-used list |
+| `useTaskActions`, `useTaskListActions` | The mutation hooks wired to error toasts |
+| `task-order-utils.ts`, `task-view-utils.ts` | The pure rules: where a dragged task lands, the sections of a smart view, what the schedule form sends |
+
+- **Addresses.** `/tasks` shows the first list, `/tasks?list=<id>` a list, `/tasks?view=starred|today|upcoming` a smart view. `/tasks?task=<id>` opens the list that holds the task with the cursor in it; use it for links to a task (`taskScopeHref` builds all of them).
+- **One dock, one panel.** Mail and Calendar share the right-hand dock between the Assistant and Tasks: `useDashboardState` answers `tasksOpen` / `setTasksOpen` next to the Assistant's state, opening either closes the other, and the choice is remembered like the Assistant's. Below 640px the header has no room for the Tasks button, so it is hidden there; the panel still opens on `openTasksPanel(...)` and covers the page like the Assistant, and the Tasks app is in the apps menu.
+- **Create button.** `focusTaskAddRow()` puts the cursor in the "Add a task" box of the list on screen.
+- **Tests.** `tests/local-tasks-ui.test.mjs` (the pure rules) and `tests/e2e/local-tasks-ui.spec.ts` (the screens, run like the API spec below).
+
 ## Reminders
 
 `runTaskReminders(env, now)` (`src/lib/tasks/reminders.ts`) runs beside `runCalendarReminders`: on Workers from the five-minute cron in `worker.ts`, in the self-hosted runtime from `server/runtime/scheduler.ts` every minute. It asks the service for `claimDueTaskReminders` in batches of 200 until none are left (at most 1,000 per run) and sends one notification per task with `sendPushContent`:
@@ -212,7 +230,7 @@ One tool layer (`src/lib/tasks/tools.ts`, shaped like `src/lib/calendar/tools.ts
 
 ## Source code link
 
-Mailflare is AGPL-3.0, and this copy is modified, so everyone who uses it over the network is offered its source (section 13). `SourceCodeLink` (`src/components/source-code-link.tsx`) renders a "Source code" link in the sidebar footer next to "Powered by" (Mail, Settings, Admin, Drive), in the account menu (every signed-in page, including Calendar and Tasks), on the sign-in pages and the landing page, and on the public booking and shared-file pages. A new shell or public page should include it.
+Mailflare is AGPL-3.0, and this copy is modified, so everyone who uses it over the network is offered its source (section 13). `SourceCodeLink` (`src/components/source-code-link.tsx`) renders a "Source code" link in the sidebar footer next to "Powered by" (Mail, Settings, Admin, Drive, Tasks), in the account menu (every signed-in page, including Calendar and Tasks), on the sign-in pages and the landing page, and on the public booking and shared-file pages. A new shell or public page should include it.
 
 The address is one value, `SOURCE_CODE_URL`: `vars` in `wrangler.jsonc` on Workers, an environment variable when self-hosted. It defaults to `https://github.com/3376016376joshua-oss/mailflare` (`src/lib/source-code.ts`); anything that is not an http(s) URL falls back to the default. The root layout reads it once per request and hands it to the links. Point it at the repository that holds the code actually deployed.
 

@@ -7,6 +7,12 @@ import type { Task, TaskQuery, TaskRepeatFreq, TaskRepeatRule } from "./types";
  * Nothing here touches the database or the DOM.
  */
 
+// ---- Length limits (Google Tasks: title 1024, notes 8192) ----
+
+export const TASK_TITLE_MAX = 1024;
+export const TASK_NOTES_MAX = 8192;
+export const TASK_LIST_TITLE_MAX = 255;
+
 // ---- Rank strings (fractional indexing) ----
 //
 // A task's `position` is a string that sorts between its neighbours, so a drag is one row update and

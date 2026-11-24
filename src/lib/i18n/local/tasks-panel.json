@@ -1,0 +1,6 @@
+{
+	"tasks.panel.open": "Open tasks",
+	"tasks.panel.close": "Close tasks",
+	"tasks.panel.switchList": "List: {title}. Switch list",
+	"tasks.panel.openApp": "Open in Tasks"
+}
