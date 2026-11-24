@@ -2,6 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import { Skeleton, SkeletonRows } from "@/components/ui/skeleton";
+import { TasksSkeleton } from "@/components/tasks/tasks-skeleton";
 
 function HeaderBar({ tabs = 0 }: { tabs?: number }) {
 	return (
@@ -89,6 +90,7 @@ const MAIL_PREFIXES = ["/inbox", "/sent", "/drafts", "/starred", "/snoozed", "/s
 export function RouteSkeleton() {
 	const pathname = usePathname() ?? "";
 	if (pathname === "/calendar" || pathname.startsWith("/calendar/")) return <CalendarSkeleton />;
+	if (pathname === "/tasks" || pathname.startsWith("/tasks/")) return <TasksSkeleton />;
 	if (MAIL_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))) return <MailSkeleton />;
 	return <GenericSkeleton />;
 }
