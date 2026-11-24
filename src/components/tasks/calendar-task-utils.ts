@@ -99,8 +99,19 @@ export function visibleChipCount(total: number, rows: number): number {
 
 // ---- Time grid ----
 
-export type TimedTaskBox = {
-	item: CalendarTaskItem;
+/**
+ * Share of a day column a task row leaves to an event it overlaps, so the event's title stays readable.
+ * Tasks that share the slot need the width more than the event does.
+ */
+const EVENT_SHARE = 0.4;
+const EVENT_SHARE_CROWDED = 0.2;
+/**
+ * The narrowest a chip in the time grid may get, in pixels: its checkbox and about five letters of its
+ * title. Tasks that would get less are merged into one "N tasks" chip per time slot.
+ */
+export const MIN_TIMED_CHIP_WIDTH = 56;
+
+type TimedTaskPlacement = {
 	/** Pixels from the top of the day column. */
 	top: number;
 	/** Zero-based column among the chips that share a time slot, and how many columns that slot has. */
@@ -110,39 +121,77 @@ export type TimedTaskBox = {
 	besideEvent: boolean;
 };
 
+/** One chip in the time grid: a task, or the tasks of a slot too crowded to show side by side (two or more, by time). */
+export type TimedTaskBox = TimedTaskPlacement & ({ kind: "task"; key: string; item: CalendarTaskItem } | { kind: "group"; key: string; items: CalendarTaskItem[] });
+
 export type TimedTaskLayoutOptions = {
 	hourHeight: number;
 	chipHeight: number;
 	/** Vertical extents of the day's events, in pixels from the top of the column. */
 	busy?: ReadonlyArray<{ top: number; bottom: number }>;
+	/** Width the chips of a day have to share, in pixels. While it is not known (not measured yet), nothing is merged. */
+	columnWidth?: number;
 };
+
+/** Where a row of chips begins, as a share of the day column: at its edge, or past the part left to an event. */
+export function timedTaskRowStart(row: Pick<TimedTaskPlacement, "columns" | "besideEvent">): number {
+	if (!row.besideEvent) return 0;
+	return row.columns > 1 ? EVENT_SHARE_CROWDED : EVENT_SHARE;
+}
 
 /**
  * Where the timed tasks of one day go in the time grid. A chip sits at its due time (kept inside the
  * day at the bottom edge). Chips whose boxes would overlap share the row side by side, and a row that
  * collides with an event is flagged so it can leave part of the event visible.
+ *
+ * A row that would leave each chip less than `MIN_TIMED_CHIP_WIDTH` of `columnWidth` is not drawn side
+ * by side: its tasks become one "N tasks" chip per time slot (the tasks whose chips would overlap the
+ * first of the slot), so the chips stay readable and an event under them keeps its title.
  */
 export function layoutTimedTasks(items: readonly CalendarTaskItem[], timeZone: string, options: TimedTaskLayoutOptions): TimedTaskBox[] {
 	const zone = normalizeTimeZone(timeZone);
+	const { chipHeight } = options;
 	const dayHeight = 24 * options.hourHeight;
 	const placed = items
 		.filter((item) => item.dueAt !== null)
 		.map((item) => {
 			const fields = zonedDateFields(new Date(item.dueAt as string), zone);
 			const minutes = fields.getUTCHours() * 60 + fields.getUTCMinutes();
-			return { item, top: Math.min(minutes * options.hourHeight / 60, dayHeight - options.chipHeight) };
+			return { item, top: Math.min(minutes * options.hourHeight / 60, dayHeight - chipHeight) };
 		})
+		// Array.prototype.sort is stable: tasks at the same time keep the order they came in.
 		.sort((a, b) => a.top - b.top);
+	const overlapsEvent = (top: number, bottom: number) => (options.busy ?? []).some((range) => range.top < bottom && range.bottom > top);
 
 	const boxes: TimedTaskBox[] = [];
 	let cluster: Array<{ item: CalendarTaskItem; top: number; column: number }> = [];
 	let clusterBottom = -Infinity;
 	let columnBottoms: number[] = [];
+	const flushSlot = (slot: readonly CalendarTaskItem[], top: number) => {
+		const placement = { top, column: 0, columns: 1, besideEvent: overlapsEvent(top, top + chipHeight) };
+		if (slot.length === 1) boxes.push({ kind: "task", key: slot[0].key, item: slot[0], ...placement });
+		else if (slot.length > 1) boxes.push({ kind: "group", key: `group:${slot[0].key}`, items: [...slot], ...placement });
+	};
 	const flush = () => {
 		if (!cluster.length) return;
-		const top = cluster[0].top;
-		const besideEvent = (options.busy ?? []).some((range) => range.top < clusterBottom && range.bottom > top);
-		for (const entry of cluster) boxes.push({ ...entry, columns: columnBottoms.length, besideEvent });
+		const row = { columns: columnBottoms.length, besideEvent: overlapsEvent(cluster[0].top, clusterBottom) };
+		const chipWidth = options.columnWidth === undefined ? Infinity : options.columnWidth * (1 - timedTaskRowStart(row)) / row.columns;
+		if (row.columns === 1 || chipWidth >= MIN_TIMED_CHIP_WIDTH) {
+			for (const entry of cluster) boxes.push({ kind: "task", key: entry.item.key, ...entry, ...row });
+		} else {
+			// Too narrow side by side: one chip per time slot, each slot starting where the previous chip ends.
+			let slot: CalendarTaskItem[] = [];
+			let slotTop = 0;
+			for (const entry of cluster) {
+				if (slot.length && entry.top >= slotTop + chipHeight) {
+					flushSlot(slot, slotTop);
+					slot = [];
+				}
+				if (!slot.length) slotTop = entry.top;
+				slot.push(entry.item);
+			}
+			flushSlot(slot, slotTop);
+		}
 		cluster = [];
 		columnBottoms = [];
 		clusterBottom = -Infinity;
@@ -151,8 +200,8 @@ export function layoutTimedTasks(items: readonly CalendarTaskItem[], timeZone: s
 		if (entry.top >= clusterBottom) flush();
 		let column = columnBottoms.findIndex((bottom) => bottom <= entry.top);
 		if (column < 0) column = columnBottoms.length;
-		columnBottoms[column] = entry.top + options.chipHeight;
-		clusterBottom = Math.max(clusterBottom, entry.top + options.chipHeight);
+		columnBottoms[column] = entry.top + chipHeight;
+		clusterBottom = Math.max(clusterBottom, entry.top + chipHeight);
 		cluster.push({ ...entry, column });
 	}
 	flush();

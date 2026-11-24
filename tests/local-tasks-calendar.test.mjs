@@ -144,6 +144,56 @@ test("a task row that collides with an event is flagged, so it can leave the eve
 	assert.equal(calendar.layoutTimedTasks([at("Well before", "08:00")], "UTC", { ...GRID, busy })[0].besideEvent, false);
 });
 
+const shape = (box) => [box.kind, box.kind === "group" ? box.items.map((entry) => entry.title) : box.item.title, box.top, box.column, box.columns, box.besideEvent];
+
+test("tasks too narrow to read side by side merge into one chip, and only then", () => {
+	// 16:00, 16:15 and 16:20 overlap each other: three columns.
+	const crowded = [at("B", "16:15"), at("A", "16:00"), at("C", "16:20")];
+	// Until the column is measured nothing merges.
+	assert.deepEqual(calendar.layoutTimedTasks(crowded, "UTC", GRID).map((box) => [box.kind, box.columns]), [["task", 3], ["task", 3], ["task", 3]]);
+	// A week column of 141px leaves each of three chips 47px: one chip, at the time of the first task, in time order.
+	assert.equal(calendar.MIN_TIMED_CHIP_WIDTH, 56);
+	const merged = calendar.layoutTimedTasks(crowded, "UTC", { ...GRID, columnWidth: 141 });
+	assert.deepEqual(merged.map(shape), [["group", ["A", "B", "C"], 576, 0, 1, false]]);
+	assert.equal(merged[0].key, "group:A");
+	// A day column has room for them (96px each).
+	assert.deepEqual(calendar.layoutTimedTasks(crowded, "UTC", { ...GRID, columnWidth: 288 }).map(shape), [["task", "A", 576, 0, 3, false], ["task", "B", 585, 1, 3, false], ["task", "C", 588, 2, 3, false]]);
+	// Two tasks fit a 141px column (70px each) and not a 90px one (45px each).
+	const pair = [at("A", "10:00"), at("B", "10:10")];
+	assert.deepEqual(calendar.layoutTimedTasks(pair, "UTC", { ...GRID, columnWidth: 141 }).map((box) => box.kind), ["task", "task"]);
+	assert.deepEqual(calendar.layoutTimedTasks(pair, "UTC", { ...GRID, columnWidth: 90 }).map(shape), [["group", ["A", "B"], 360, 0, 1, false]]);
+	// A task on its own is never merged, however narrow the column.
+	assert.deepEqual(calendar.layoutTimedTasks([at("Alone", "10:00")], "UTC", { ...GRID, columnWidth: 20 }).map(shape), [["task", "Alone", 360, 0, 1, false]]);
+});
+
+test("an event under a row of tasks makes it merge sooner, and the merged chip leaves the event readable", () => {
+	const busy = [{ top: 16 * 36, bottom: 17 * 36 }];
+	// The row keeps to the trailing 80% beside an event: 56px each of 141px is enough, 36px each of 90px is not.
+	const pair = [at("A", "16:00"), at("B", "16:15")];
+	assert.deepEqual(calendar.layoutTimedTasks(pair, "UTC", { ...GRID, busy, columnWidth: 141 }).map(shape), [["task", "A", 576, 0, 2, true], ["task", "B", 585, 1, 2, true]]);
+	const merged = calendar.layoutTimedTasks(pair, "UTC", { ...GRID, busy, columnWidth: 90 });
+	assert.deepEqual(merged.map(shape), [["group", ["A", "B"], 576, 0, 1, true]]);
+	// One chip takes the share a single task takes, so the event keeps 40% of the column instead of 20%.
+	assert.equal(calendar.timedTaskRowStart(merged[0]), 0.4);
+	assert.equal(calendar.timedTaskRowStart({ columns: 2, besideEvent: true }), 0.2);
+	assert.equal(calendar.timedTaskRowStart({ columns: 3, besideEvent: false }), 0);
+});
+
+test("a crowded run of tasks becomes one chip per time slot, and a task alone in its slot stays a task", () => {
+	// 09:00, 09:05 and 09:10 need three columns; 09:40 clears the first of them, so it stands alone below the merged chip.
+	const morning = calendar.layoutTimedTasks([at("A", "09:00"), at("B", "09:05"), at("C", "09:10"), at("Later", "09:40")], "UTC", { ...GRID, columnWidth: 141 });
+	assert.deepEqual(morning.map(shape), [["group", ["A", "B", "C"], 324, 0, 1, false], ["task", "Later", 348, 0, 1, false]]);
+	// A chain every 20 minutes shares two columns. In a 90px column it becomes two chips, each where its slot begins.
+	const chain = [at("A", "14:00"), at("B", "14:20"), at("C", "14:40"), at("D", "15:00")];
+	assert.deepEqual(calendar.layoutTimedTasks(chain, "UTC", { ...GRID, columnWidth: 141 }).map((box) => [box.kind, box.columns]), [["task", 2], ["task", 2], ["task", 2], ["task", 2]]);
+	const slots = calendar.layoutTimedTasks(chain, "UTC", { ...GRID, columnWidth: 90 });
+	assert.deepEqual(slots.map(shape), [["group", ["A", "B"], 504, 0, 1, false], ["group", ["C", "D"], 528, 0, 1, false]]);
+	assert.equal(new Set(slots.map((box) => box.key)).size, slots.length, "keys are unique within a day");
+	// Each slot answers for itself whether an event lies under it: here only the second one (15:00-16:00).
+	const withEvent = calendar.layoutTimedTasks(chain, "UTC", { ...GRID, columnWidth: 90, busy: [{ top: 15 * 36, bottom: 16 * 36 }] });
+	assert.deepEqual(withEvent.map((box) => [box.kind, box.besideEvent]), [["group", false], ["group", true]]);
+});
+
 // ---- Calendar: month cells ----
 
 const event = (id, time) => ({ id, startsAt: `2026-11-24T${time}:00.000Z` });

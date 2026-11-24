@@ -36,6 +36,12 @@ export function formatTaskDue(task: Pick<Task, "dueDate" | "dueAt">, t: Translat
 	return t("tasks.due.withTime", { date: label, time: formatUserDate(task.dueAt, { hour: "numeric", minute: "2-digit", timeZone }) });
 }
 
+/** A day as a heading: "Tue, Nov 24", with the year when it is not this one. */
+export function formatTaskDay(date: string, options: FormatOptions = {}): string {
+	const today = dateInZone(options.now ?? new Date(), options.timeZone ?? getUserTimeZone());
+	return formatDate(date, { weekday: "short", month: "short", day: "numeric", ...(date.slice(0, 4) === today.slice(0, 4) ? {} : { year: "numeric" }) });
+}
+
 const EVERY = { daily: "tasks.repeat.everyDays", weekly: "tasks.repeat.everyWeeks", monthly: "tasks.repeat.everyMonths", yearly: "tasks.repeat.everyYears" } as const;
 
 /** "Weekly", "Every 2 weeks", "Daily, until Dec 31, 2026", "Monthly, 5 times". */

@@ -6,18 +6,18 @@ import { useLanguage } from "@/components/language-provider";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useTasks } from "@/lib/tasks/client";
-import { formatTaskDue, taskErrorMessage } from "@/lib/tasks/format";
-import { rememberLastTaskList } from "@/lib/tasks/last-list";
+import { formatTaskDay, formatTaskDue, taskErrorMessage } from "@/lib/tasks/format";
+import { getLastTaskListId, rememberLastTaskList } from "@/lib/tasks/last-list";
 import { buildTaskTree, dateInZone } from "@/lib/tasks/task-utils";
-import type { Task, TaskList } from "@/lib/tasks/types";
+import type { Task, TaskList, TaskOccurrence } from "@/lib/tasks/types";
 import { getUserTimeZone } from "@/lib/time/utils";
 import { cn } from "@/lib/utils";
-import { CompletedTaskRow, TaskAddRow } from "./task-list-rows";
+import { CompletedTaskRow, TaskAddRow, TaskOccurrenceRow } from "./task-list-rows";
 import { dropNeedsPendingTask, flattenTaskRows, isSameTaskSpot, keyboardTaskMove, resolveTaskDrop } from "./task-order-utils";
 import type { TaskDropTarget, TaskMoveDirection } from "./task-order-utils";
 import { TaskRow } from "./task-row";
 import type { TaskRowReorder } from "./task-row";
-import { defaultDueDateForScope, groupTasksForView, taskScopeQuery } from "./task-view-utils";
+import { defaultDueDateForScope, groupTasksForView, listForNewTask, taskDayEntries, taskScopeKey, taskScopeQuery } from "./task-view-utils";
 import type { TaskScope } from "./task-view-utils";
 import { useKeepFocus } from "./use-keep-focus";
 import { useSortDrag } from "./use-sort-drag";
@@ -46,8 +46,10 @@ const EMPTY_KEYS = {
 	today: ["tasks.app.emptyToday", "tasks.app.emptyTodayHint"],
 	upcoming: ["tasks.app.emptyUpcoming", "tasks.app.emptyUpcomingHint"],
 	starred: ["tasks.app.emptyStarred", "tasks.app.emptyStarredHint"],
+	date: ["tasks.app.emptyDate", "tasks.app.emptyDateHint"],
 } as const;
 const NO_TASKS: Task[] = [];
+const NO_OCCURRENCES: TaskOccurrence[] = [];
 
 /** The current time, refreshed every minute so "overdue" and "Today" stay true on a page left open. */
 function useNow(): Date {
@@ -60,7 +62,7 @@ function useNow(): Date {
 }
 
 export type TaskListViewProps = {
-	/** One list, or a smart view. Give the component a `key` per scope so its editing state starts fresh. */
+	/** One list, a smart view, or the tasks of a day. Give the component a `key` per scope (`taskScopeKey`) so its editing state starts fresh. */
 	scope: TaskScope;
 	lists: readonly TaskList[];
 	/** The side panel is narrower: tighter gutters, nothing else differs. */
@@ -72,19 +74,22 @@ export type TaskListViewProps = {
 	listensForCreate?: boolean;
 	/** In a smart view, makes a task's list chip switch lists in place instead of linking to the Tasks app. */
 	onOpenList?: (listId: string) => void;
+	/** Among the tasks of a day, makes a coming occurrence of a repeating task lead to the task that repeats. */
+	onOpenTask?: (taskId: string) => void;
 	className?: string;
 };
 
 /**
- * The tasks of one list or smart view: the "Add a task" box, the open tasks (in a list: draggable, one
- * level of subtasks), and the collapsed Completed section. The Tasks app and the side panel both render this.
+ * The tasks of one list, smart view or day: the "Add a task" box, the open tasks (in a list: draggable,
+ * one level of subtasks), and the collapsed Completed section (a list and a day have one). The Tasks app
+ * and the side panel both render this.
  */
-export function TaskListView({ scope, lists, variant = "page", focusTaskId, onFocusHandled, listensForCreate, onOpenList, className }: TaskListViewProps) {
+export function TaskListView({ scope, lists, variant = "page", focusTaskId, onFocusHandled, listensForCreate, onOpenList, onOpenTask, className }: TaskListViewProps) {
 	const { t } = useLanguage();
 	const timeZone = getUserTimeZone();
 	const now = useNow();
 	const today = dateInZone(now, timeZone);
-	const scopeKey = scope.kind === "list" ? scope.listId : scope.view;
+	const scopeKey = taskScopeKey(scope);
 	// eslint-disable-next-line react-hooks/exhaustive-deps -- a scope is fully named by its kind and key
 	const query = useMemo(() => taskScopeQuery(scope), [scope.kind, scopeKey]);
 	const { data, isPending, isError, error, refetch } = useTasks(query);
@@ -110,6 +115,10 @@ export function TaskListView({ scope, lists, variant = "page", focusTaskId, onFo
 	}, [tasks]);
 	const rows = useMemo(() => flattenTaskRows(tree, new Set(subtaskCounts.keys())), [tree, subtaskCounts]);
 	const sections = useMemo(() => (scope.kind === "view" ? groupTasksForView(openTasks, scope.view, today, timeZone) : []), [scope, openTasks, today, timeZone]);
+	// A day also lists the occurrences of repeating tasks projected onto it, as the calendar that leads here does.
+	const occurrences = (scope.kind === "date" && data?.occurrences) || NO_OCCURRENCES;
+	const dayEntries = useMemo(() => (scope.kind === "date" ? taskDayEntries(openTasks, occurrences, timeZone) : []), [scope.kind, openTasks, occurrences, timeZone]);
+	const hasCompletedSection = scope.kind !== "view";
 	const listTitles = useMemo(() => new Map(lists.map((list) => [list.id, list.title])), [lists]);
 	const rowsRef = useRef(rows);
 	useEffect(() => { rowsRef.current = rows; });
@@ -190,15 +199,17 @@ export function TaskListView({ scope, lists, variant = "page", focusTaskId, onFo
 			rememberLastTaskList(scope.listId);
 			return;
 		}
+		// Outside a list nothing says where the task goes: the list the user last worked in, like "Add to tasks" on an email.
 		const date = defaultDueDateForScope(scope, today);
-		actions.create({ title, listId: lists[0]?.id, starred: scope.view === "starred" || undefined, due: date ? { date, timeZone } : undefined });
+		const listId = listForNewTask(lists.map((list) => list.id), getLastTaskListId());
+		actions.create({ title, listId, starred: (scope.kind === "view" && scope.view === "starred") || undefined, due: date ? { date, timeZone } : undefined });
 	}
 
 	const rowProps = { actions, lists, now, timeZone, onActiveChange: setActiveId };
 	const gutter = variant === "panel" ? "px-1.5" : "px-2 md:px-3";
 	const loading = isPending;
 	const migrationRequired = data?.migrationRequired === true;
-	const emptyKind = loading || isError || migrationRequired || openTasks.length > 0 ? null : scope.kind === "view" ? scope.view : completedTasks.length > 0 ? "done" : "list";
+	const emptyKind = loading || isError || migrationRequired || openTasks.length > 0 || dayEntries.length > 0 ? null : scope.kind === "view" ? scope.view : completedTasks.length > 0 ? "done" : scope.kind;
 
 	return (
 		<div className={cn("flex min-h-0 flex-1 flex-col", className)}>
@@ -236,6 +247,17 @@ export function TaskListView({ scope, lists, variant = "page", focusTaskId, onFo
 							</ul>
 						</section>
 					))}
+					{scope.kind === "date" && dayEntries.length > 0 && (
+						<ul aria-label={formatTaskDay(scope.date, { now, timeZone })}>
+							{dayEntries.map((entry) => (
+								<li key={entry.key}>
+									{entry.kind === "task"
+										? <TaskRow task={entry.task} active={activeId === entry.task.id} listTitle={listTitles.get(entry.task.listId)} onOpenList={onOpenList} {...rowProps} />
+										: <TaskOccurrenceRow occurrence={entry.occurrence} due={formatTaskDue(entry.occurrence, t, { now, timeZone })} listTitle={listTitles.get(entry.occurrence.listId)} onOpen={onOpenTask} />}
+								</li>
+							))}
+						</ul>
+					)}
 					{emptyKind && (
 						<div className="flex flex-col items-center px-6 py-12 text-center">
 							<span className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-blue-50 text-blue-600"><CheckCircle2 size={28} aria-hidden="true" /></span>
@@ -243,13 +265,13 @@ export function TaskListView({ scope, lists, variant = "page", focusTaskId, onFo
 							<p className="mt-1 max-w-xs text-sm text-neutral-500">{t(EMPTY_KEYS[emptyKind][1])}</p>
 						</div>
 					)}
-					{isList && completedTasks.length > 0 && (
+					{hasCompletedSection && completedTasks.length > 0 && (
 						<section className="mt-3 border-t border-neutral-100 pt-2">
 							<button type="button" onClick={() => setCompletedOpen((open) => !open)} aria-expanded={completedOpen} className="flex h-10 w-full items-center gap-2 rounded-2xl px-3 text-left text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-100/70 focus-visible:outline-2 focus-visible:outline-blue-600">
 								<ChevronRight size={16} aria-hidden="true" className={cn("shrink-0 transition-transform rtl:rotate-180", completedOpen && "rotate-90 rtl:rotate-90")} />
 								{t("tasks.app.completedCount", { count: completedTasks.length })}
 							</button>
-							{completedOpen && <ul>{completedTasks.map((task) => <li key={task.id}><CompletedTaskRow task={task} actions={actions} aligned subtaskCount={subtaskCounts.get(task.id) ?? 0} /></li>)}</ul>}
+							{completedOpen && <ul>{completedTasks.map((task) => <li key={task.id}><CompletedTaskRow task={task} actions={actions} aligned={isList} subtaskCount={subtaskCounts.get(task.id) ?? 0} /></li>)}</ul>}
 						</section>
 					)}
 					{data?.truncated && <p className="px-3 pt-4 text-xs text-neutral-500">{t("tasks.app.truncated")}</p>}

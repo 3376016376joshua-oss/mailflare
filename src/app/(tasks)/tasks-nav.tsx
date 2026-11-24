@@ -43,7 +43,7 @@ export function TasksNav({ onNavigate }: { onNavigate?: () => void }) {
 	const listRef = useRef<HTMLUListElement | null>(null);
 	const lists = data?.lists ?? [];
 	const ids = lists.map((list) => list.id);
-	const scope = resolveTaskScope({ view: params.get("view"), list: params.get("list") }, ids);
+	const scope = resolveTaskScope({ view: params.get("view"), date: params.get("date"), list: params.get("list") }, ids);
 	const compact = minimal && !mobile;
 	const keepFocus = useKeepFocus(listRef, "data-sort-id", ids.join("\n"));
 

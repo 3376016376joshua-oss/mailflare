@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertCircle, Check, Repeat2 } from "@/components/icons";
+import { AlertCircle, Check, ListChecks, Repeat2 } from "@/components/icons";
 import { useLanguage } from "@/components/language-provider";
 import { formatEventTime } from "@/app/(calendar)/calendar/utils";
 import { cn } from "@/lib/utils";
@@ -64,6 +64,28 @@ export function CalendarTaskChip({ item, tasks, showTime = false, className }: C
 				{showTime && time && <span className="ml-1 hidden font-normal text-neutral-500 @[14rem]:inline"> {time}</span>}
 			</button>
 		</div>
+	);
+}
+
+/**
+ * The tasks of a time slot too crowded to show side by side, as one "N tasks" chip. It opens the Tasks
+ * panel on their day, where each can be read, checked off and changed. Hovering lists what it stands for.
+ */
+export function CalendarTaskGroupChip({ items, tasks, className }: { items: readonly CalendarTaskItem[]; tasks: Pick<CalendarTasks, "openDay">; className?: string }) {
+	const { t } = useLanguage();
+	const label = t("tasks.calendar.group", { count: items.length });
+	const allCompleted = items.every((item) => item.completed);
+	return (
+		<button
+			type="button"
+			onClick={() => tasks.openDay(items[0].date)}
+			aria-label={`${label}: ${items.map((item) => item.title).join(", ")}`}
+			title={items.map((item) => (item.dueAt ? `${item.title} · ${formatEventTime(new Date(item.dueAt))}` : item.title)).join("\n")}
+			className={cn(chipClass, "@container w-full gap-1 border-neutral-300 px-1.5 text-left outline-none hover:border-neutral-400 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500", allCompleted ? "text-neutral-500 line-through" : "text-neutral-800", className)}
+		>
+			<ListChecks size={12} aria-hidden="true" className="hidden shrink-0 text-neutral-500 @[3.5rem]:block" />
+			<span className="min-w-0 flex-1 truncate">{label}</span>
+		</button>
 	);
 }
 

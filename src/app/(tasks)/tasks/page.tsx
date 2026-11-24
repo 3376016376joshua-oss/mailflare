@@ -9,14 +9,14 @@ import { useLanguage } from "@/components/language-provider";
 import { taskIconButtonClass, taskMenuClass, taskMenuItemClass } from "@/components/tasks/task-controls";
 import { TaskListDialog } from "@/components/tasks/task-list-dialog";
 import { TaskListView } from "@/components/tasks/task-list-view";
-import { resolveTaskScope, taskScopeHref } from "@/components/tasks/task-view-utils";
+import { resolveTaskScope, taskScopeHref, taskScopeKey } from "@/components/tasks/task-view-utils";
 import { useTaskListActions } from "@/components/tasks/use-task-actions";
 import { Button } from "@/components/ui/button";
 import { confirmDestructive } from "@/components/ui/confirm-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { isPendingId } from "@/lib/tasks/cache-utils";
 import { useTask, useTaskLists } from "@/lib/tasks/client";
-import { taskErrorMessage } from "@/lib/tasks/format";
+import { formatTaskDay, taskErrorMessage } from "@/lib/tasks/format";
 import type { TaskList } from "@/lib/tasks/types";
 import { cn } from "@/lib/utils";
 
@@ -65,9 +65,9 @@ function TasksScreen() {
 	const params = useSearchParams();
 	const { data, isPending, isError, error, refetch } = useTaskLists();
 	const lists = data?.lists ?? [];
-	const scope = resolveTaskScope({ view: params.get("view"), list: params.get("list") }, lists.map((list) => list.id));
+	const scope = resolveTaskScope({ view: params.get("view"), date: params.get("date"), list: params.get("list") }, lists.map((list) => list.id));
 	const list = scope?.kind === "list" ? lists.find((candidate) => candidate.id === scope.listId) ?? null : null;
-	const title = scope?.kind === "view" ? t(VIEW_TITLES[scope.view]) : list?.title;
+	const title = scope?.kind === "view" ? t(VIEW_TITLES[scope.view]) : scope?.kind === "date" ? formatTaskDay(scope.date) : list?.title;
 
 	// `/tasks?task=<id>` (a reminder, a link from the calendar) opens the list that holds the task and puts the cursor in it.
 	const taskId = params.get("task");
@@ -93,10 +93,11 @@ function TasksScreen() {
 			</div>
 			{scope ? (
 				<TaskListView
-					key={scope.kind === "list" ? scope.listId : scope.view}
+					key={taskScopeKey(scope)}
 					scope={scope}
 					lists={lists}
 					listensForCreate
+					onOpenTask={(id) => router.push(taskScopeHref(null, id))}
 					focusTaskId={onTargetList ? taskId : null}
 					onFocusHandled={() => router.replace(scopeHref)}
 				/>
