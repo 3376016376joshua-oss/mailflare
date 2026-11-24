@@ -396,6 +396,22 @@ test("tasks changed elsewhere, in this tab or another, are refetched", async () 
 		await page.settle();
 		assert.equal(page.text(), "3|From another tab,From the assistant,Existing");
 
+		// Mail deleted for good takes the link to it out of its task: a single delete says so, emptying Trash sends a bare event.
+		const mailChanged = (detail) => page.act(async () => { window.dispatchEvent(new window.CustomEvent("mailflare:messages-changed", { detail })); });
+		const reads = () => api.state.calls.filter((call) => call.startsWith("GET /api/tasks?")).length;
+		let before = reads();
+		await mailChanged({ kind: "read", messageIds: ["msg_1"], read: true });
+		await mailChanged({ kind: "removed", action: "archive", messageIds: ["msg_1"] });
+		await page.settle();
+		assert.equal(reads(), before, "reading or filing mail does not touch tasks");
+		await mailChanged({ kind: "removed", action: "delete", messageIds: ["msg_1"] });
+		await page.settle();
+		assert.equal(reads(), before + 1);
+		before = reads();
+		await mailChanged(undefined);
+		await page.settle();
+		assert.equal(reads(), before + 1);
+
 		let opened;
 		const stop = page.client.onTasksOpenPanel((detail) => { opened = detail; });
 		page.client.openTasksPanel({ taskId: "tsk_9", listId: LIST });

@@ -16,7 +16,7 @@ import type { TaskView } from "@/lib/tasks/types";
 import { cn } from "@/lib/utils";
 import { taskIconButtonClass, taskMenuClass, taskMenuItemClass } from "./task-controls";
 import { TaskListDialog } from "./task-list-dialog";
-import { TaskListView } from "./task-list-view";
+import { TaskListView, focusTaskAddRowOnOpen } from "./task-list-view";
 import { taskScopeHref } from "./task-view-utils";
 import type { TaskScope } from "./task-view-utils";
 import { useTaskListActions } from "./use-task-actions";
@@ -156,7 +156,7 @@ export function TasksPanel({ open, onOpenChange }: { open: boolean; onOpenChange
 					{isError && <Button type="button" variant="outline" size="sm" onClick={() => void refetch()}>{t("tasks.app.retry")}</Button>}
 				</div>
 			)}
-			{creating && <TaskListDialog onClose={() => setCreating(false)} onSubmit={(name) => listActions.create(name, (created) => selectList(created.id))} />}
+			{creating && <TaskListDialog onClose={() => setCreating(false)} onSubmit={(name) => listActions.create(name, (created) => { focusTaskAddRowOnOpen(created.id); selectList(created.id); })} />}
 		</section>
 	);
 }

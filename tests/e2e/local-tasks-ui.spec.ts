@@ -231,6 +231,8 @@ test("lists are created, renamed, reordered, cleared and deleted", async ({ page
 	await newList.getByRole("button", { name: "Create" }).click();
 	await expect(page.getByRole("heading", { name: "Home" })).toBeVisible();
 	await expect(page).toHaveURL(/list=/);
+	// A new list is empty: it opens ready for its first task.
+	await expect(page.getByRole("textbox", { name: "Add a task" })).toBeFocused();
 
 	await page.getByRole("button", { name: "Options for Home" }).click();
 	await page.getByRole("menuitem", { name: "Rename list" }).click();
@@ -403,11 +405,21 @@ test("on a phone the menu drawer holds the lists and the panel covers the page",
 	await page.goto("/inbox");
 	await expect(page.locator('[aria-controls="tasks-side-panel"]')).toHaveCount(1);
 	await expect(page.locator('[aria-controls="tasks-side-panel"]')).toBeHidden();
+	// The header has room for its controls: the search button sits beside the logo, not on top of it.
+	const header = page.locator("header").first();
+	const logo = (await header.getByRole("link", { name: "Inbox", exact: true }).boundingBox())!;
+	const search = (await header.getByRole("button", { name: "Search mail" }).boundingBox())!;
+	expect(search.x).toBeGreaterThanOrEqual(logo.x + logo.width);
+	const compose = page.getByRole("button", { name: "Compose" });
+	await expect(compose).toBeVisible();
 	await page.evaluate((listId) => window.dispatchEvent(new CustomEvent("mailflare:tasks-open-panel", { detail: { listId } })), errands.id);
 	const panel = page.locator("#tasks-side-panel");
 	await expect(panel).toBeVisible();
 	await expect.poll(async () => Math.round((await panel.boundingBox())?.width ?? 0)).toBe(390);
+	// The phone Compose button would lie on top of the panel.
+	await expect(compose).toBeHidden();
 	await expect(panel.getByRole("textbox", { name: "Title" })).toHaveValue("Pick up the parcel");
 	await panel.getByRole("button", { name: "Close tasks" }).click();
 	await expect(panel).toHaveCount(0);
+	await expect(compose).toBeVisible();
 });

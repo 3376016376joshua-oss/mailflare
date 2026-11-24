@@ -70,7 +70,7 @@ export default function DashboardLayout({
                     <SidebarResizeBoundary />
                   </SidebarAside>
                   <div className="flex min-h-0 min-w-0 flex-col">
-                    <header className="flex h-16 w-full shrink-0 items-center gap-3 pr-4 text-sm">
+                    <header className="flex h-16 w-full shrink-0 items-center gap-3 pr-4 text-sm max-sm:gap-1">
                       <MobileMenuButton className="ml-2" />
                       <MailSearchInput mobileEnd />
                       {/* <Link
@@ -98,7 +98,7 @@ export default function DashboardLayout({
                       </aside>
                     </div>
                   </div>
-                  <FloatingComposer showButton />
+                  <FloatingComposer showButton={!panelVisible} />
                   <UndoToasts />
                   <Toaster position="bottom-left" containerClassName="text-sm" />
                 </div>
