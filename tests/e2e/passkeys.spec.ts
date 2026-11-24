@@ -62,7 +62,13 @@ async function enableVirtualAuthenticator(page: Page): Promise<string> {
 	return authenticatorId;
 }
 
-/** Conditional UI must not auto-complete a password sign-in in the test. */
+/**
+ * Conditional UI must not auto-complete a password sign-in in the test, so presence is off while a
+ * login page loads. Switch it on before the click that starts a ceremony, never after: the virtual
+ * authenticator only answers a request made while presence is on, so switching it on afterwards races
+ * the page's own request and, when the page wins, the ceremony waits for ever. A request that is
+ * already pending (the login page's conditional one) stays pending when presence comes on.
+ */
 async function setPresence(page: Page, enabled: boolean) {
 	const client = await page.context().newCDPSession(page);
 	await client.send("WebAuthn.setAutomaticPresenceSimulation", { authenticatorId, enabled });
@@ -82,6 +88,16 @@ async function logout(page: Page) {
 	await page.context().clearCookies();
 	await page.evaluate(() => localStorage.clear());
 	await page.goto("/login");
+	// The sign-in buttons do nothing until the page has hydrated; a click before that is lost.
+	await page.waitForLoadState("networkidle");
+}
+
+/** Signs in with the passkey button of the login page. */
+async function signInWithPasskey(page: Page) {
+	await setPresence(page, true);
+	await page.getByRole("button", { name: "Sign in with a passkey" }).click();
+	await page.waitForURL("**/inbox", { timeout: 30_000 });
+	await setPresence(page, false);
 }
 
 // Leave the documented demo password usable after the lifecycle test removes it.
@@ -116,14 +132,32 @@ function base32Decode(input: string): Buffer {
 }
 
 /** RFC 6238, the same profile the app's authenticator flow expects. */
-function totpCode(secret: string): string {
-	const counter = Math.floor(Date.now() / 1000 / 30);
+function hotpCode(secret: string, counter: number): string {
 	const message = Buffer.alloc(8);
 	message.writeBigUInt64BE(BigInt(counter));
 	const digest = createHmac("sha1", base32Decode(secret)).update(message).digest();
 	const offset = digest[digest.length - 1] & 15;
 	const code = ((digest[offset] & 127) << 24) | ((digest[offset + 1] & 255) << 16) | ((digest[offset + 2] & 255) << 8) | (digest[offset + 3] & 255);
 	return String(code % 1_000_000).padStart(6, "0");
+}
+
+/** The time step the last code was made for, per secret. */
+let lastTotpStep = { secret: "", step: 0 };
+
+/**
+ * A code the server has not seen. It accepts every 30-second step once (the current one and one on
+ * either side), so a second code inside the same step is the next step's, and one further ahead waits
+ * for the clock to bring that step into the accepted window.
+ */
+async function totpCode(secret: string): Promise<string> {
+	let step = Math.floor(Date.now() / 1000 / 30);
+	if (lastTotpStep.secret === secret && step <= lastTotpStep.step) {
+		step = lastTotpStep.step + 1;
+		const acceptedFrom = (step - 1) * 30_000;
+		if (Date.now() < acceptedFrom) await new Promise((resolve) => setTimeout(resolve, acceptedFrom - Date.now() + 1_000));
+	}
+	lastTotpStep = { secret, step };
+	return hotpCode(secret, step);
 }
 
 /**
@@ -136,13 +170,12 @@ async function completeStepUp(page: Page, options: { title?: string; next?: stri
 	await expect(dialog).toBeVisible();
 	const passkey = dialog.getByRole("button", { name: "Confirm with a passkey" });
 	if (await passkey.count()) {
-		await setPresence(page, false);
-		await passkey.click();
 		await setPresence(page, true);
+		await passkey.click();
 	} else {
 		await dialog.getByLabel("Password").fill(PASSWORD);
 		const code = dialog.getByLabel("Code", { exact: true });
-		if (await code.count()) await code.fill(totpCode(totpSecret));
+		if (await code.count()) await code.fill(await totpCode(totpSecret));
 		await dialog.getByRole("button", { name: "Continue" }).click();
 	}
 	if (options.next) await expect(page.getByRole("dialog", { name: options.next })).toBeVisible({ timeout: 30_000 });
@@ -179,7 +212,7 @@ async function enrollAuthenticator(page: Page) {
 	const dialog = page.getByRole("dialog", { name: "Scan the code" });
 	await expect(dialog).toBeVisible({ timeout: 30_000 });
 	totpSecret = ((await dialog.locator("code").first().textContent()) ?? "").trim();
-	await dialog.getByLabel("6-digit code").fill(totpCode(totpSecret));
+	await dialog.getByLabel("6-digit code").fill(await totpCode(totpSecret));
 	await dialog.getByRole("button", { name: "Verify and turn on" }).click();
 	const codes = page.getByRole("dialog", { name: "Save your recovery codes" });
 	await expect(codes).toBeVisible({ timeout: 30_000 });
@@ -202,8 +235,8 @@ test("passkey lifecycle: add, rename, sign in, second step, password removal", a
 	await expect(page.getByRole("dialog", { name: "How would you like to sign in?" })).toBeHidden();
 
 	// A check identifies the saved credential without signing in again.
-	await page.getByRole("button", { name: "Check a passkey" }).click();
 	await setPresence(page, true);
+	await page.getByRole("button", { name: "Check a passkey" }).click();
 	await expect(page.getByText("Just verified", { exact: true })).toBeVisible({ timeout: 30_000 });
 	await setPresence(page, false);
 
@@ -222,11 +255,7 @@ test("passkey lifecycle: add, rename, sign in, second step, password removal", a
 	// Independent passkey sign-in.
 	await logout(page);
 	await expect(page.getByText("Can't use your passkey?")).toBeVisible();
-	await setPresence(page, false);
-	await page.getByRole("button", { name: "Sign in with a passkey" }).click();
-	await setPresence(page, true);
-	await page.waitForURL("**/inbox", { timeout: 30_000 });
-	await setPresence(page, false);
+	await signInWithPasskey(page);
 
 	// Password plus a passkey as the second step.
 	await page.goto("/settings/security");
@@ -247,9 +276,8 @@ test("passkey lifecycle: add, rename, sign in, second step, password removal", a
 	await page.getByLabel("Password").fill(PASSWORD);
 	await page.getByRole("button", { name: "Sign in", exact: true }).click();
 	await expect(page.getByRole("button", { name: "Use a passkey" })).toBeVisible({ timeout: 30_000 });
-	await setPresence(page, false);
-	await page.getByRole("button", { name: "Use a passkey" }).click();
 	await setPresence(page, true);
+	await page.getByRole("button", { name: "Use a passkey" }).click();
 	await page.waitForURL("**/inbox", { timeout: 30_000 });
 	await setPresence(page, false);
 
@@ -269,11 +297,7 @@ test("passkey lifecycle: add, rename, sign in, second step, password removal", a
 	await page.getByLabel("Password").fill(PASSWORD);
 	await page.getByRole("button", { name: "Sign in", exact: true }).click();
 	await expect(page.getByText("Invalid email or password.")).toBeVisible({ timeout: 30_000 });
-	await setPresence(page, false);
-	await page.getByRole("button", { name: "Sign in with a passkey" }).click();
-	await setPresence(page, true);
-	await page.waitForURL("**/inbox", { timeout: 30_000 });
-	await setPresence(page, false);
+	await signInWithPasskey(page);
 });
 
 test("first passkey can make the account passkey-only", async ({ page, request }) => {
@@ -297,11 +321,7 @@ test("first passkey can make the account passkey-only", async ({ page, request }
 	await page.getByLabel("Password").fill(PASSWORD);
 	await page.getByRole("button", { name: "Sign in", exact: true }).click();
 	await expect(page.getByText("Invalid email or password.")).toBeVisible({ timeout: 30_000 });
-	await setPresence(page, false);
-	await page.getByRole("button", { name: "Sign in with a passkey" }).click();
-	await setPresence(page, true);
-	await page.waitForURL("**/inbox", { timeout: 30_000 });
-	await setPresence(page, false);
+	await signInWithPasskey(page);
 });
 
 test("turning the authenticator off keeps the two-step policy as it was", async ({ page, request }) => {
@@ -477,7 +497,7 @@ test("removing the last passkey preserves authenticator two-step verification", 
 	await page.getByLabel("Email").fill(EMAIL);
 	await page.getByLabel("Password").fill(PASSWORD);
 	await page.getByRole("button", { name: "Sign in", exact: true }).click();
-	await page.getByLabel("Authenticator code or recovery code", { exact: true }).fill(totpCode(totpSecret));
+	await page.getByLabel("Authenticator code or recovery code", { exact: true }).fill(await totpCode(totpSecret));
 	await page.getByRole("button", { name: "Verify", exact: true }).click();
 	await page.waitForURL("**/inbox", { timeout: 30_000 });
 });
@@ -510,9 +530,5 @@ test("first passkey removes the password and the authenticator codes together", 
 	await page.getByLabel("Password").fill(PASSWORD);
 	await page.getByRole("button", { name: "Sign in", exact: true }).click();
 	await expect(page.getByText("Invalid email or password.")).toBeVisible({ timeout: 30_000 });
-	await setPresence(page, false);
-	await page.getByRole("button", { name: "Sign in with a passkey" }).click();
-	await setPresence(page, true);
-	await page.waitForURL("**/inbox", { timeout: 30_000 });
-	await setPresence(page, false);
+	await signInWithPasskey(page);
 });
