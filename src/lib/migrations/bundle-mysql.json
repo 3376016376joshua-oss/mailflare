@@ -386,6 +386,25 @@
         "CREATE INDEX `calendar_invite_tombstones_user_idx` ON `calendar_invite_tombstones` (`user_id`);",
         "CREATE INDEX `calendar_occurrence_responses_event_idx` ON `calendar_occurrence_responses` (`event_id`);"
       ]
+    },
+    {
+      "name": "9000_local_tasks.sql",
+      "statements": [
+        "CREATE TABLE `local_task_lists` (\n\t`id` varchar(191) NOT NULL,\n\t`user_id` varchar(191) NOT NULL,\n\t`title` longtext NOT NULL,\n\t`position` varchar(191) NOT NULL,\n\t`created_at` bigint NOT NULL,\n\t`updated_at` bigint NOT NULL,\n\tCONSTRAINT `local_task_lists_id` PRIMARY KEY(`id`)\n);",
+        "CREATE TABLE `local_tasks` (\n\t`id` varchar(191) NOT NULL,\n\t`user_id` varchar(191) NOT NULL,\n\t`list_id` varchar(191) NOT NULL,\n\t`parent_id` varchar(191),\n\t`title` longtext NOT NULL,\n\t`notes` longtext NOT NULL DEFAULT (''),\n\t`status` varchar(64) NOT NULL DEFAULT 'needs-action',\n\t`completed_at` bigint,\n\t`due_date` varchar(191),\n\t`due_at` bigint,\n\t`time_zone` longtext,\n\t`remind_at` bigint,\n\t`reminded_at` bigint,\n\t`starred_at` bigint,\n\t`position` varchar(191) NOT NULL,\n\t`message_id` varchar(191),\n\t`repeat_freq` varchar(64),\n\t`repeat_interval` bigint NOT NULL DEFAULT 1,\n\t`repeat_anchor_day` bigint,\n\t`repeat_until` longtext,\n\t`repeat_count` bigint,\n\t`repeat_index` bigint NOT NULL DEFAULT 0,\n\t`series_id` varchar(191),\n\t`created_at` bigint NOT NULL,\n\t`updated_at` bigint NOT NULL,\n\tCONSTRAINT `local_tasks_id` PRIMARY KEY(`id`)\n);",
+        "ALTER TABLE `local_task_lists` ADD CONSTRAINT `local_task_lists_user_id_users_id_fk` FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON DELETE cascade ON UPDATE no action;",
+        "ALTER TABLE `local_tasks` ADD CONSTRAINT `local_tasks_user_id_users_id_fk` FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON DELETE cascade ON UPDATE no action;",
+        "ALTER TABLE `local_tasks` ADD CONSTRAINT `local_tasks_list_id_local_task_lists_id_fk` FOREIGN KEY (`list_id`) REFERENCES `local_task_lists`(`id`) ON DELETE cascade ON UPDATE no action;",
+        "ALTER TABLE `local_tasks` ADD CONSTRAINT `local_tasks_message_id_messages_id_fk` FOREIGN KEY (`message_id`) REFERENCES `messages`(`id`) ON DELETE set null ON UPDATE no action;",
+        "CREATE INDEX `local_task_lists_user_position_idx` ON `local_task_lists` (`user_id`,`position`);",
+        "CREATE INDEX `local_tasks_list_parent_position_idx` ON `local_tasks` (`list_id`,`parent_id`,`position`);",
+        "CREATE INDEX `local_tasks_user_due_idx` ON `local_tasks` (`user_id`,`due_date`);",
+        "CREATE INDEX `local_tasks_user_starred_idx` ON `local_tasks` (`user_id`,`starred_at`);",
+        "CREATE INDEX `local_tasks_remind_idx` ON `local_tasks` (`remind_at`);",
+        "CREATE INDEX `local_tasks_message_idx` ON `local_tasks` (`message_id`);",
+        "CREATE INDEX `local_tasks_parent_idx` ON `local_tasks` (`parent_id`);",
+        "CREATE INDEX `local_tasks_series_idx` ON `local_tasks` (`series_id`,`repeat_index`);"
+      ]
     }
   ]
 }

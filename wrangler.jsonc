@@ -4,6 +4,11 @@
 	"main": "./worker.ts",
 	"compatibility_date": "2026-05-20",
 	"keep_vars": true,
+	"vars": {
+		// Where the source code this installation runs can be downloaded. The app links to it as
+		// "Source code" (AGPL-3.0 section 13): point it at your own repository when you change the code.
+		"SOURCE_CODE_URL": "https://github.com/3376016376joshua-oss/mailflare",
+	},
 	"compatibility_flags": [
 		"nodejs_compat",
 		"global_fetch_strictly_public"

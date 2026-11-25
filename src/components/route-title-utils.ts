@@ -20,6 +20,7 @@ const staticRouteTitles: Array<[string, TranslationKey]> = [
 	["/ai-usage", "aiUsage.title"],
 	["/calendar", "account.calendar"],
 	["/booking", "booking.title"],
+	["/tasks", "tasks.title"],
 	["/drive", "drive.title"],
 	["/contacts", "navigation.contacts"],
 	["/compose", "compose.pageTitle"],

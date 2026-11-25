@@ -5,6 +5,7 @@ import { useSidebar } from "./sidebar-state";
 import { useShortcuts } from "./shortcuts";
 import { Keyboard } from "@/components/icons";
 import { useLanguage } from "./language-provider";
+import { SourceCodeLink } from "./source-code-link";
 
 export function SidebarFooter() {
 	const { t } = useLanguage();
@@ -48,6 +49,7 @@ export function PoweredBy({ className = "px-1" }: { className?: string }) {
         >
           Mailflare v{packageJson.version}
         </a>
+        <SourceCodeLink className="mt-0.5 block w-fit" />
       </p>
 	);
 }

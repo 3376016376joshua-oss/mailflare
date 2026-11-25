@@ -26,6 +26,7 @@ import { MAILBOX_AVATAR_CHANGED_EVENT } from "@/lib/mailboxes/avatar-client";
 import type { MailboxAvatarChangedDetail } from "@/lib/mailboxes/avatar-client-types";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip } from "@/components/ui/tooltip";
+import { SourceCodeFooter } from "@/components/source-code-link";
 import type {
 	AccountAvatarProps,
 	MailboxAccountRowProps,
@@ -464,6 +465,7 @@ export function MailboxSelector({ initialUser }: MailboxSelectorProps = {}) {
 							{t("account.signOut")}
 						</button>
 					</div>
+					<SourceCodeFooter className="pt-3 pb-1" />
 				</div>
 			)}
 		</div>

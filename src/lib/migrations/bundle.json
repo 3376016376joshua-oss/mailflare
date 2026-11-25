@@ -866,6 +866,21 @@
         "CREATE UNIQUE INDEX `calendar_occurrence_responses_event_occurrence_guest_idx` ON `calendar_occurrence_responses` (`event_id`,`occurrence_ms`,`guest`);",
         "CREATE INDEX `calendar_occurrence_responses_event_idx` ON `calendar_occurrence_responses` (`event_id`);"
       ]
+    },
+    {
+      "name": "9000_local_tasks.sql",
+      "statements": [
+        "CREATE TABLE `local_task_lists` (\n\t`id` text PRIMARY KEY NOT NULL,\n\t`user_id` text NOT NULL,\n\t`title` text NOT NULL,\n\t`position` text NOT NULL,\n\t`created_at` integer NOT NULL,\n\t`updated_at` integer NOT NULL,\n\tFOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE cascade\n);",
+        "CREATE INDEX `local_task_lists_user_position_idx` ON `local_task_lists` (`user_id`,`position`);",
+        "CREATE TABLE `local_tasks` (\n\t`id` text PRIMARY KEY NOT NULL,\n\t`user_id` text NOT NULL,\n\t`list_id` text NOT NULL,\n\t`parent_id` text,\n\t`title` text NOT NULL,\n\t`notes` text DEFAULT '' NOT NULL,\n\t`status` text DEFAULT 'needs-action' NOT NULL,\n\t`completed_at` integer,\n\t`due_date` text,\n\t`due_at` integer,\n\t`time_zone` text,\n\t`remind_at` integer,\n\t`reminded_at` integer,\n\t`starred_at` integer,\n\t`position` text NOT NULL,\n\t`message_id` text,\n\t`repeat_freq` text,\n\t`repeat_interval` integer DEFAULT 1 NOT NULL,\n\t`repeat_anchor_day` integer,\n\t`repeat_until` text,\n\t`repeat_count` integer,\n\t`repeat_index` integer DEFAULT 0 NOT NULL,\n\t`series_id` text,\n\t`created_at` integer NOT NULL,\n\t`updated_at` integer NOT NULL,\n\tFOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE cascade,\n\tFOREIGN KEY (`list_id`) REFERENCES `local_task_lists`(`id`) ON UPDATE no action ON DELETE cascade,\n\tFOREIGN KEY (`message_id`) REFERENCES `messages`(`id`) ON UPDATE no action ON DELETE set null\n);",
+        "CREATE INDEX `local_tasks_list_parent_position_idx` ON `local_tasks` (`list_id`,`parent_id`,`position`);",
+        "CREATE INDEX `local_tasks_user_due_idx` ON `local_tasks` (`user_id`,`due_date`);",
+        "CREATE INDEX `local_tasks_user_starred_idx` ON `local_tasks` (`user_id`,`starred_at`);",
+        "CREATE INDEX `local_tasks_remind_idx` ON `local_tasks` (`remind_at`);",
+        "CREATE INDEX `local_tasks_message_idx` ON `local_tasks` (`message_id`);",
+        "CREATE INDEX `local_tasks_parent_idx` ON `local_tasks` (`parent_id`);",
+        "CREATE INDEX `local_tasks_series_idx` ON `local_tasks` (`series_id`,`repeat_index`);"
+      ]
     }
   ]
 }

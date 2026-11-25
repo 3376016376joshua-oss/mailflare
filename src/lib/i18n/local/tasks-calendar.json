@@ -1,0 +1,15 @@
+{
+	"tasks.calendar.showTasks": "Show tasks",
+	"tasks.calendar.showCompleted": "Show completed",
+	"tasks.calendar.strip": "Tasks without a time",
+	"tasks.calendar.showAll": "Show all tasks",
+	"tasks.calendar.showFewer": "Show fewer tasks",
+	"tasks.calendar.pending.one": "{count} pending task",
+	"tasks.calendar.pending.other": "{count} pending tasks",
+	"tasks.calendar.pendingHint": "Open tasks from earlier days",
+	"tasks.calendar.group.other": "{count} tasks",
+	"tasks.calendar.complete": "Mark \"{title}\" complete",
+	"tasks.calendar.reopen": "Mark \"{title}\" incomplete",
+	"tasks.calendar.repeats": "Upcoming occurrence of a repeating task",
+	"tasks.calendar.completed": "Task completed"
+}

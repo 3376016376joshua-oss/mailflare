@@ -1,4 +1,5 @@
 import type { BackupTableGroupId, DatabaseBackupTable } from "./types";
+import { LOCAL_BACKUP_TABLES } from "./local-tables";
 
 export const BACKUP_TABLE_GROUPS: { id: BackupTableGroupId; label: string; tables: DatabaseBackupTable[] }[] = [
 	{ id: "accounts", label: "Accounts and mailboxes", tables: ["users", "user_compose_preferences", "domains", "domain_tracking_hosts", "mailboxes", "mailbox_access", "mailbox_aliases", "contacts", "api_keys", "mcp_key_mailboxes", "sessions", "password_reset_tokens", "mfa_recovery_codes", "login_challenges", "passkey_credentials"] },
@@ -8,6 +9,8 @@ export const BACKUP_TABLE_GROUPS: { id: BackupTableGroupId; label: string; table
 	{ id: "drive", label: "Drive uploads and shares", tables: ["drive_items", "drive_upload_parts", "drive_shares"] },
 	{ id: "system", label: "App settings and history", tables: ["audit_logs", "backup_settings", "backups", "app_settings", "license_settings"] },
 ];
+// Local fork tables (Tasks app) travel with the mail group, which already holds calendar data.
+BACKUP_TABLE_GROUPS.find((group) => group.id === "mail")?.tables.push(...LOCAL_BACKUP_TABLES);
 
 export function getSelectedBackupTables(excludedGroups: BackupTableGroupId[]): Set<DatabaseBackupTable> {
 	const excluded = new Set(excludedGroups);

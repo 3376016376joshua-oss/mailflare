@@ -16,6 +16,7 @@ import type { BookingSlot, PublicBookingEvent } from "../types";
 import { bookingTimeZones, calendarDays, formatCalendarDate, localDateForSlot, moveMonth, readBookingPageSelection, submitPublicBooking, writeBookingPageSelection } from "./utils";
 import { BookingDetailSkeleton } from "./booking-detail-skeleton";
 import { Select } from "@/components/ui/select";
+import { SourceCodeFooter } from "@/components/source-code-link";
 
 export default function PublicBookingEventPage() {
 	const { t } = useLanguage();
@@ -126,13 +127,14 @@ export default function PublicBookingEventPage() {
 
 
 						<span className="flex-1 max-sm:hidden" />
-						<div className="mb-4 max-w-48"><LanguageSelector /></div>
+						<div className="mb-4 max-w-48 max-sm:mt-6"><LanguageSelector /></div>
 						<div className="flex min-w-0 items-center gap-3 max-sm:order-first max-sm:mb-5">
 
 							<img src={branding.iconUrl} width={24} height={24} alt={branding.appName || "Mailflare"} />
 
 							<span className="truncate font-semibold">{branding.appName}</span>
 						</div>
+						<SourceCodeFooter className="mt-3 text-left" />
 					</aside>
 					{done ? <section className="flex min-h-0 flex-col items-center justify-center px-8 py-20 text-center"><div className="mb-5 flex h-14 w-14 items-center justify-center rounded-full bg-green-100 text-green-700"><Check className="h-7 w-7" /></div><h2 className="text-2xl font-semibold">{t("public.booked")}</h2><p className="mt-3 text-sm text-neutral-500">{t("public.scheduledFor", { when: selectedSlot ? formatUserDate(selectedSlot.startsAt, { dateStyle: "full", timeStyle: "short", timeZone }) : "" })}</p></section> : selectedSlot ?
 						<form onSubmit={(formEvent) => { formEvent.preventDefault(); void book(); }} className="page-transition-enter min-h-0 space-y-6 overflow-y-auto p-7 max-sm:p-5 sm:p-10">

@@ -90,4 +90,6 @@ interface CloudflareEnv {
 	VAPID_PRIVATE_KEY?: string;
 	/** Contact URI for VAPID, e.g. mailto:admin@example.com or https://mail.example.com. */
 	VAPID_SUBJECT?: string;
+	/** Where this installation's source code can be downloaded (AGPL-3.0 section 13); see src/lib/source-code.ts. */
+	SOURCE_CODE_URL?: string;
 }

@@ -22,6 +22,10 @@ CF_TOKEN=your_api_token_with_zone_email_permissions
 # Receiving through Resend or SES needs a public HTTPS address.
 # APP_URL=https://mail.example.com
 
+# Optional: where the "Source code" link points (AGPL-3.0 section 13). Set it to the repository
+# holding the code you run. The value in wrangler.jsonc `vars` applies when this is unset.
+# SOURCE_CODE_URL=https://github.com/you/mailflare
+
 # Optional: store raw mail, attachments, Drive files, avatars and backups in Backblaze B2 instead of R2.
 # Set all four. Create an application key restricted to one bucket (read and write files), and use the
 # S3-compatible endpoint shown on the bucket page.

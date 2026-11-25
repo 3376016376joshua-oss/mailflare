@@ -417,6 +417,25 @@
         "CREATE UNIQUE INDEX \"calendar_occurrence_responses_event_occurrence_guest_idx\" ON \"calendar_occurrence_responses\" USING btree (\"event_id\",\"occurrence_ms\",\"guest\");",
         "CREATE INDEX \"calendar_occurrence_responses_event_idx\" ON \"calendar_occurrence_responses\" USING btree (\"event_id\");"
       ]
+    },
+    {
+      "name": "9000_local_tasks.sql",
+      "statements": [
+        "CREATE TABLE \"local_task_lists\" (\n\t\"id\" text PRIMARY KEY NOT NULL,\n\t\"user_id\" text NOT NULL,\n\t\"title\" text NOT NULL,\n\t\"position\" text NOT NULL,\n\t\"created_at\" bigint NOT NULL,\n\t\"updated_at\" bigint NOT NULL\n);",
+        "CREATE TABLE \"local_tasks\" (\n\t\"id\" text PRIMARY KEY NOT NULL,\n\t\"user_id\" text NOT NULL,\n\t\"list_id\" text NOT NULL,\n\t\"parent_id\" text,\n\t\"title\" text NOT NULL,\n\t\"notes\" text DEFAULT '' NOT NULL,\n\t\"status\" text DEFAULT 'needs-action' NOT NULL,\n\t\"completed_at\" bigint,\n\t\"due_date\" text,\n\t\"due_at\" bigint,\n\t\"time_zone\" text,\n\t\"remind_at\" bigint,\n\t\"reminded_at\" bigint,\n\t\"starred_at\" bigint,\n\t\"position\" text NOT NULL,\n\t\"message_id\" text,\n\t\"repeat_freq\" text,\n\t\"repeat_interval\" bigint DEFAULT 1 NOT NULL,\n\t\"repeat_anchor_day\" bigint,\n\t\"repeat_until\" text,\n\t\"repeat_count\" bigint,\n\t\"repeat_index\" bigint DEFAULT 0 NOT NULL,\n\t\"series_id\" text,\n\t\"created_at\" bigint NOT NULL,\n\t\"updated_at\" bigint NOT NULL\n);",
+        "ALTER TABLE \"local_task_lists\" ADD CONSTRAINT \"local_task_lists_user_id_users_id_fk\" FOREIGN KEY (\"user_id\") REFERENCES \"public\".\"users\"(\"id\") ON DELETE cascade ON UPDATE no action;",
+        "ALTER TABLE \"local_tasks\" ADD CONSTRAINT \"local_tasks_user_id_users_id_fk\" FOREIGN KEY (\"user_id\") REFERENCES \"public\".\"users\"(\"id\") ON DELETE cascade ON UPDATE no action;",
+        "ALTER TABLE \"local_tasks\" ADD CONSTRAINT \"local_tasks_list_id_local_task_lists_id_fk\" FOREIGN KEY (\"list_id\") REFERENCES \"public\".\"local_task_lists\"(\"id\") ON DELETE cascade ON UPDATE no action;",
+        "ALTER TABLE \"local_tasks\" ADD CONSTRAINT \"local_tasks_message_id_messages_id_fk\" FOREIGN KEY (\"message_id\") REFERENCES \"public\".\"messages\"(\"id\") ON DELETE set null ON UPDATE no action;",
+        "CREATE INDEX \"local_task_lists_user_position_idx\" ON \"local_task_lists\" USING btree (\"user_id\",\"position\");",
+        "CREATE INDEX \"local_tasks_list_parent_position_idx\" ON \"local_tasks\" USING btree (\"list_id\",\"parent_id\",\"position\");",
+        "CREATE INDEX \"local_tasks_user_due_idx\" ON \"local_tasks\" USING btree (\"user_id\",\"due_date\");",
+        "CREATE INDEX \"local_tasks_user_starred_idx\" ON \"local_tasks\" USING btree (\"user_id\",\"starred_at\");",
+        "CREATE INDEX \"local_tasks_remind_idx\" ON \"local_tasks\" USING btree (\"remind_at\");",
+        "CREATE INDEX \"local_tasks_message_idx\" ON \"local_tasks\" USING btree (\"message_id\");",
+        "CREATE INDEX \"local_tasks_parent_idx\" ON \"local_tasks\" USING btree (\"parent_id\");",
+        "CREATE INDEX \"local_tasks_series_idx\" ON \"local_tasks\" USING btree (\"series_id\",\"repeat_index\");"
+      ]
     }
   ]
 }

@@ -7,6 +7,8 @@ import { getRequestLocale, loadServerMessages } from "@/lib/i18n/server";
 import { sidebarBootstrapScript } from "@/components/sidebar-state-utils";
 import { themeBootstrapScript } from "@/components/theme-utils";
 import { getHomeBranding } from "./home-server-utils";
+import { SourceCodeProvider } from "@/components/source-code-link";
+import { getSourceCodeUrl } from "@/lib/source-code-server";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -69,7 +71,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
 				<link rel="icon" href="/api/branding/icon"></link>
 			</head>
 			<body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
-				<LanguageProvider initialLocale={locale} initialMessages={messages}><Providers initialBranding={branding}>{children}</Providers></LanguageProvider>
+				<LanguageProvider initialLocale={locale} initialMessages={messages}><Providers initialBranding={branding}><SourceCodeProvider url={getSourceCodeUrl()}>{children}</SourceCodeProvider></Providers></LanguageProvider>
 			</body>
 		</html>
 	);

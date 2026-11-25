@@ -11,6 +11,7 @@ import { MessageSourceDialog } from "@/components/messages/message-source-dialog
 import { useMessageListVisibility } from "@/components/messages/message-list-visibility";
 import { useAutoAdvance } from "@/components/messages/message-detail-navigation";
 import { useConversationNotes } from "@/components/messages/conversation-notes-context";
+import { useAddToTasksAction } from "@/components/tasks/add-to-tasks";
 import { MessageSnoozeDialog } from "./message-snooze-dialog";
 import { requestUnsubscribe } from "@/components/messages/unsubscribe-button-utils";
 import { MessageActionMenu, MessageActionMenuItem, MessageActionMenuLabel, MessageActionMenuSeparator } from "./action-menu";
@@ -61,6 +62,7 @@ export function MessageActions({
 	const { shortcutsEnabled } = useShortcuts();
 	const autoAdvance = useAutoAdvance(messageId);
 	const notes = useConversationNotes();
+	const addToTasksAction = useAddToTasksAction(messageId);
 	const [pendingAction, setPendingAction] = useState<
 		BulkMessageAction | "unsubscribe" | ReplyMode | "forward" | "block" | null
 	>(null);
@@ -356,6 +358,7 @@ export function MessageActions({
 			group: "secondary",
 		});
 	}
+	inlineActions.push(addToTasksAction);
 	inlineActions.push({
 		id: "reply",
 		label: t("message.reply"),

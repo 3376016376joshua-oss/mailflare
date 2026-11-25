@@ -29,6 +29,7 @@ import { RouteTitle } from "@/components/route-title";
 import { useAppBadge } from "@/hooks/use-app-badge";
 import { UndoToasts } from "@/components/messages/undo-toasts";
 import { Toaster } from "react-hot-toast";
+import { TasksPanel, TasksPanelToggle } from "@/components/tasks/tasks-panel";
 
 export default function DashboardLayout({
   children,
@@ -39,9 +40,10 @@ export default function DashboardLayout({
   const pathname = usePathname();
   // Contacts is a list page like Mailboxes: gray page, white rows, no white panel.
   const listPage = pathname === "/contacts" || pathname.startsWith("/contacts/");
-  const { assistantOpen, setAssistantOpen, assistantFullSize, setAssistantFullSize } = useDashboardState();
+  const { assistantOpen, setAssistantOpen, assistantFullSize, setAssistantFullSize, tasksOpen, setTasksOpen } = useDashboardState();
   const assistantEnabled = useAssistantAvailability();
   const assistantVisible = assistantEnabled === true && assistantOpen;
+  const panelVisible = assistantVisible || tasksOpen;
   useAppBadge();
 
   useEffect(() => {
@@ -68,7 +70,7 @@ export default function DashboardLayout({
                     <SidebarResizeBoundary />
                   </SidebarAside>
                   <div className="flex min-h-0 min-w-0 flex-col">
-                    <header className="flex h-16 w-full shrink-0 items-center gap-3 pr-4 text-sm">
+                    <header className="flex h-16 w-full shrink-0 items-center gap-3 pr-4 text-sm max-sm:gap-1">
                       <MobileMenuButton className="ml-2" />
                       <MailSearchInput mobileEnd />
                       {/* <Link
@@ -80,21 +82,23 @@ export default function DashboardLayout({
                       </Link> */}
                       <LicenseIndicator />
                       {assistantEnabled && <Button type="button" variant="ghost" size="sm" className={assistantOpen ? "bg-blue-50 text-blue-700" : "text-neutral-600"} onClick={() => { setAssistantOpen((current) => !current); setAssistantFullSize(false); }} aria-label={assistantOpen ? t("agent.assistant.close") : t("agent.assistant.open")} aria-expanded={assistantOpen} aria-controls="email-assistant-panel"><Sparkles className="h-5 w-5" /></Button>}
+                      <TasksPanelToggle open={tasksOpen} onToggle={() => setTasksOpen((current) => !current)} />
                       <MailboxSelector />
                     </header>
                     <DnsSkippedBanner />
                     <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-                      <AssistantOpenContext.Provider value={assistantVisible}>
+                      <AssistantOpenContext.Provider value={panelVisible}>
                         <main id="main-content" tabIndex={-1} className={clsx("focus:outline-none page-flush min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain scrollbar-gutter-stable", listPage ? "rounded-tl-3xl max-md:rounded-t-3xl max-md:bg-white max-md:pb-24" : "rounded-t-3xl bg-white")} aria-hidden={assistantVisible && assistantFullSize} inert={assistantVisible && assistantFullSize}>
                           {children}
                         </main>
                       </AssistantOpenContext.Provider>
-                      <aside className={clsx(assistantFullSize ? "pl-0" : "pl-4", `min-h-0 min-w-0 shrink-0 overflow-hidden transition-[width] duration-300 ease-in-out motion-reduce:transition-none pr-2 pb-2 max-md:p-0`, assistantVisible ? "" : "opacity-0")} style={{ width: assistantVisible ? assistantFullSize ? "100%" : "min(390px, 100%)" : "0px" }} aria-hidden={!assistantVisible} inert={!assistantVisible}>
+                      <aside className={clsx(assistantFullSize ? "pl-0" : "pl-4", `min-h-0 min-w-0 shrink-0 overflow-hidden transition-[width] duration-300 ease-in-out motion-reduce:transition-none pr-2 pb-2 max-md:p-0`, panelVisible ? "" : "opacity-0", tasksOpen && "[&>#email-assistant-panel]:hidden")} style={{ width: panelVisible ? assistantFullSize ? "100%" : "min(390px, 100%)" : "0px" }} aria-hidden={!panelVisible} inert={!panelVisible}>
                         {assistantEnabled && <AgentPanel open={assistantVisible} fullSize={assistantFullSize} onToggleFullSize={() => setAssistantFullSize((current) => !current)} onClose={() => { setAssistantOpen(false); setAssistantFullSize(false); }} />}
+                        <TasksPanel open={tasksOpen} onOpenChange={setTasksOpen} />
                       </aside>
                     </div>
                   </div>
-                  <FloatingComposer showButton />
+                  <FloatingComposer showButton={!panelVisible} />
                   <UndoToasts />
                   <Toaster position="bottom-left" containerClassName="text-sm" />
                 </div>

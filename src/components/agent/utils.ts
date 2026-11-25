@@ -1,5 +1,6 @@
 import type { Translator } from "../../lib/i18n/utils";
 import type { KeyboardEvent } from "react";
+import type { TaskToolName } from "../../lib/tasks/tool-types";
 import type { AgentActionProposal, AgentDraftAction, AgentEmailReference, AgentEvent, AgentMessage, AgentTurn, QueuedAgentMessage } from "./types";
 
 export function enqueueAgentMessage(messages: QueuedAgentMessage[], text: string): QueuedAgentMessage[] {
@@ -162,7 +163,12 @@ export const AGENT_TOOL_NAMES = [
 
 type AgentToolName = typeof AGENT_TOOL_NAMES[number];
 
+// The task tools of the local fork (src/lib/tasks/tool-scopes.ts); their texts are the tasks.agent.tool.* strings.
+// Listed here because this file must stay free of runtime imports (tests load it directly).
+const TASK_TOOL_NAMES = ["list_task_lists", "list_tasks", "get_task", "create_task", "update_tasks"] as const satisfies readonly TaskToolName[];
+
 function agentToolText(name: string | null | undefined, part: "running" | "completed" | "description", t: Translator): string | null {
+	if ((TASK_TOOL_NAMES as readonly string[]).includes(name ?? "")) return t(`tasks.agent.tool.${name as TaskToolName}.${part}`);
 	return (AGENT_TOOL_NAMES as readonly string[]).includes(name ?? "") ? t(`agent.tool.${name as AgentToolName}.${part}`) : null;
 }
 

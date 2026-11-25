@@ -26,14 +26,16 @@ import { useDashboardState } from "../(dashboard)/dashboard-state";
 import { useAssistantAvailability } from "../(dashboard)/use-assistant-availability";
 import { RouteTitle } from "@/components/route-title";
 import { Select } from "@/components/ui/select";
+import { TasksPanel, TasksPanelToggle } from "@/components/tasks/tasks-panel";
 
 export default function CalendarLayout({ children }: { children: React.ReactNode }) {
   const { t } = useLanguage();
   const pathname = usePathname();
   const router = useRouter();
-  const { assistantOpen, setAssistantOpen, assistantFullSize, setAssistantFullSize } = useDashboardState();
+  const { assistantOpen, setAssistantOpen, assistantFullSize, setAssistantFullSize, tasksOpen, setTasksOpen } = useDashboardState();
   const assistantEnabled = useAssistantAvailability();
   const assistantVisible = assistantEnabled === true && assistantOpen;
+  const panelVisible = assistantVisible || tasksOpen;
 
   useEffect(() => {
     if (assistantEnabled === false && (assistantOpen || assistantFullSize)) {
@@ -67,16 +69,18 @@ export default function CalendarLayout({ children }: { children: React.ReactNode
                     </div>
                     <LicenseIndicator />
                     {assistantEnabled && <Button type="button" variant="ghost" size="sm" className={assistantOpen ? "bg-blue-50 text-blue-700" : "text-neutral-600"} onClick={() => { setAssistantOpen((current) => !current); setAssistantFullSize(false); }} aria-label={assistantOpen ? t("agent.assistant.close") : t("agent.assistant.open")} aria-expanded={assistantOpen} aria-controls="email-assistant-panel"><Sparkles className="h-5 w-5" /></Button>}
+                    <TasksPanelToggle open={tasksOpen} onToggle={() => setTasksOpen((current) => !current)} />
                     <MailboxSelector />
                   </header>
                   <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-                    <AssistantOpenContext.Provider value={assistantVisible}>
+                    <AssistantOpenContext.Provider value={panelVisible}>
                       <main id="main-content" tabIndex={-1} className="focus:outline-none min-h-0 min-w-0 flex-1 overflow-hidden bg-[#f6f8fc] overscroll-contain scrollbar-gutter-stable" aria-hidden={assistantVisible && assistantFullSize} inert={assistantVisible && assistantFullSize}>
                         <div key={pathname} className="page-transition-enter h-full min-h-0">{children}</div>
                       </main>
                     </AssistantOpenContext.Provider>
-                    <aside className={clsx(assistantFullSize ? "pl-0" : "pl-4", "min-h-0 min-w-0 shrink-0 overflow-hidden pb-2 pr-2 max-md:p-0 transition-[width] duration-300 ease-in-out motion-reduce:transition-none", assistantVisible ? "" : "opacity-0")} style={{ width: assistantVisible ? assistantFullSize ? "100%" : "min(390px, 100%)" : "0px" }} aria-hidden={!assistantVisible} inert={!assistantVisible}>
+                    <aside className={clsx(assistantFullSize ? "pl-0" : "pl-4", "min-h-0 min-w-0 shrink-0 overflow-hidden pb-2 pr-2 max-md:p-0 transition-[width] duration-300 ease-in-out motion-reduce:transition-none", panelVisible ? "" : "opacity-0", tasksOpen && "[&>#email-assistant-panel]:hidden")} style={{ width: panelVisible ? assistantFullSize ? "100%" : "min(390px, 100%)" : "0px" }} aria-hidden={!panelVisible} inert={!panelVisible}>
                       {assistantEnabled && <AgentPanel open={assistantVisible} fullSize={assistantFullSize} onToggleFullSize={() => setAssistantFullSize((current) => !current)} onClose={() => { setAssistantOpen(false); setAssistantFullSize(false); }} />}
+                      <TasksPanel open={tasksOpen} onOpenChange={setTasksOpen} />
                     </aside>
                   </div>
                 </div>

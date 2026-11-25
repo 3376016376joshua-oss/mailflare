@@ -2,6 +2,7 @@ import type { TranslationKey } from "@/lib/i18n/types";
 import { authFetch } from "@/lib/auth/client";
 import type { ApiKeyScope } from "@/lib/api/scopes";
 import type { ManagedApiKey, McpKeyScope } from "./api-keys-settings-types";
+import { TASK_MCP_KEY_SCOPES } from "@/lib/tasks/tool-labels";
 
 export const MCP_KEY_SCOPES: { value: McpKeyScope; labelKey: TranslationKey; descriptionKey: TranslationKey }[] = [
 	{ value: "mcp:read", labelKey: "apiKeys.mcpRead.label", descriptionKey: "apiKeys.mcpRead.description" },
@@ -10,6 +11,7 @@ export const MCP_KEY_SCOPES: { value: McpKeyScope; labelKey: TranslationKey; des
 	{ value: "mcp:request-send", labelKey: "apiKeys.mcpRequestSend.label", descriptionKey: "apiKeys.mcpRequestSend.description" },
 	{ value: "mcp:calendar-read", labelKey: "apiKeys.mcpCalendarRead.label", descriptionKey: "apiKeys.mcpCalendarRead.description" },
 	{ value: "mcp:calendar-write", labelKey: "apiKeys.mcpCalendarWrite.label", descriptionKey: "apiKeys.mcpCalendarWrite.description" },
+	...TASK_MCP_KEY_SCOPES,
 ];
 
 export const STANDARD_KEY_SCOPES: { value: ApiKeyScope; labelKey: TranslationKey; descriptionKey: TranslationKey }[] = [
