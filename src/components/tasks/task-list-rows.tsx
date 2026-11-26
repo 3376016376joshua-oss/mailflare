@@ -10,7 +10,7 @@ import { TASK_TITLE_MAX } from "@/lib/tasks/task-utils";
 import type { Task, TaskOccurrence } from "@/lib/tasks/types";
 import { formatUserDate } from "@/lib/time/utils";
 import { cn } from "@/lib/utils";
-import { TaskCheckbox, TaskChip, taskIconButtonClass } from "./task-controls";
+import { TaskCheckbox, TaskChip, TaskListChip, taskIconButtonClass } from "./task-controls";
 import type { TaskActions } from "./use-task-actions";
 
 /**
@@ -107,8 +107,13 @@ export function TaskOccurrenceRow({ occurrence, due, listTitle, onOpen }: { occu
 	);
 }
 
-/** A finished task in the Completed section: struck through, with its completion date; the check reopens it. */
-export const CompletedTaskRow = memo(function CompletedTaskRow({ task, actions, aligned, subtaskCount = 0 }: { task: Task; actions: TaskActions; aligned?: boolean; subtaskCount?: number }) {
+/**
+ * A finished task, in the Completed section of a list, in the Completed view or among search results:
+ * struck through, with its completion date; the check reopens it. `listTitle` names its list where rows
+ * of several lists are mixed (`onOpenList`: see `TaskListChip`). `showNotes` adds its notes, which a
+ * search may be what it matched on.
+ */
+export const CompletedTaskRow = memo(function CompletedTaskRow({ task, actions, aligned, subtaskCount = 0, listTitle, onOpenList, showNotes }: { task: Task; actions: TaskActions; aligned?: boolean; subtaskCount?: number; listTitle?: string; onOpenList?: (listId: string) => void; showNotes?: boolean }) {
 	const { t } = useLanguage();
 	const pending = isPendingId(task.id);
 
@@ -123,7 +128,13 @@ export const CompletedTaskRow = memo(function CompletedTaskRow({ task, actions, 
 			<TaskCheckbox checked disabled={pending} onToggle={() => actions.update(task.id, { completed: false })} />
 			<div className="min-w-0 flex-1 py-2">
 				<p className="break-words text-sm leading-5 text-neutral-500 line-through">{task.title}</p>
-				{task.completedAt && <p className="mt-0.5 text-xs leading-4 text-neutral-500">{t("tasks.app.completedOn", { date: formatUserDate(task.completedAt, { weekday: "short", month: "short", day: "numeric" }) })}</p>}
+				{showNotes && task.notes && <p className="mt-0.5 line-clamp-2 whitespace-pre-wrap break-words text-xs leading-4 text-neutral-500">{task.notes}</p>}
+				{(task.completedAt || listTitle) && (
+					<div className={cn("flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1", listTitle ? "mt-1.5" : "mt-0.5")}>
+						{task.completedAt && <p className="text-xs leading-4 text-neutral-500">{t("tasks.app.completedOn", { date: formatUserDate(task.completedAt, { weekday: "short", month: "short", day: "numeric" }) })}</p>}
+						{listTitle && <TaskListChip listId={task.listId} title={listTitle} onOpen={onOpenList} />}
+					</div>
+				)}
 			</div>
 			<button type="button" disabled={pending} onClick={() => void remove()} aria-label={t("tasks.app.deleteTask", { title: task.title })} title={t("tasks.action.delete")} className={cn(taskIconButtonClass, "mt-0.5 opacity-0 focus-visible:opacity-100 group-hover/task:opacity-100 [@media(hover:none)]:opacity-100")}>
 				<Trash2 size={16} aria-hidden="true" />

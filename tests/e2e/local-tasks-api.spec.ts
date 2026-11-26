@@ -85,6 +85,30 @@ test("lists, tasks, subtasks, moves and views work end to end", async ({ request
 	expect((await request.get(`/api/tasks/${starred.id}`, { headers })).status()).toBe(404);
 });
 
+test("a search finds tasks in every list by title or notes, and the Completed view lists what is done", async ({ request }) => {
+	const create = async (data: object) => (await (await request.post("/api/tasks", { headers, data })).json()).task;
+	const titles = async (query: string) => (await (await request.get(`/api/tasks?${query}`, { headers })).json()).tasks.map((task: { title: string }) => task.title);
+	const errands = (await (await request.post("/api/tasks/lists", { headers, data: { title: "Errands" } })).json()).list;
+	await create({ title: "Buy milk" });
+	await create({ title: "Call the dentist", notes: "Ask about the INVOICE" });
+	const sent = await create({ title: "Send invoice 100%", listId: errands.id });
+	expect((await request.patch(`/api/tasks/${sent.id}`, { headers, data: { completed: true } })).status()).toBe(200);
+
+	// Open tasks first, then completed ones; case does not matter and every word has to be there.
+	expect(await titles("q=invoice")).toEqual(["Call the dentist", "Send invoice 100%"]);
+	expect(await titles("q=Invoice&completed=0")).toEqual(["Call the dentist"]);
+	expect(await titles(`q=${encodeURIComponent("ask dentist")}`)).toEqual(["Call the dentist"]);
+	expect(await titles(`q=${encodeURIComponent("milk dentist")}`)).toEqual([]);
+	expect(await titles(`q=${encodeURIComponent("100%")}`)).toEqual(["Send invoice 100%"]);
+	expect(await titles(`q=invoice&listId=${errands.id}`)).toEqual(["Send invoice 100%"]);
+	// Only spaces is no search.
+	expect(await titles(`q=${encodeURIComponent("   ")}&completed=1`)).toEqual(["Send invoice 100%"]);
+	expect((await request.get(`/api/tasks?q=${"x".repeat(201)}`, { headers })).status()).toBe(400);
+
+	expect(await titles("view=completed")).toEqual(["Send invoice 100%"]);
+	expect(await titles("view=completed&q=milk")).toEqual([]);
+});
+
 test("a repeating task advances when completed and shows in a calendar window", async ({ request }) => {
 	const response = await request.post("/api/tasks", { headers, data: { title: "Water plants", due: { date: "2030-03-04", time: "08:00", timeZone: "UTC" }, repeat: { freq: "weekly", count: 3 } } });
 	const first = (await response.json()).task;

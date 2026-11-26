@@ -1,13 +1,13 @@
 import { z } from "zod";
 import { isValidTimeZone } from "@/lib/time/utils";
-import { MAX_REPEAT_COUNT, MAX_REPEAT_INTERVAL, TASK_LIST_TITLE_MAX, TASK_NOTES_MAX, TASK_TITLE_MAX, isDateString, isTimeString } from "./task-utils";
+import { MAX_REPEAT_COUNT, MAX_REPEAT_INTERVAL, TASK_LIST_TITLE_MAX, TASK_NOTES_MAX, TASK_SEARCH_MAX, TASK_TITLE_MAX, TASK_VIEWS, isDateString, isTimeString } from "./task-utils";
 
 /**
  * Input validation for the tasks service, shared by the REST routes and any tool layer built on it.
  * The length limits live in task-utils.ts, so the browser can use them without bundling zod.
  */
 
-export { TASK_LIST_TITLE_MAX, TASK_NOTES_MAX, TASK_TITLE_MAX };
+export { TASK_LIST_TITLE_MAX, TASK_NOTES_MAX, TASK_SEARCH_MAX, TASK_TITLE_MAX };
 
 const id = z.string().min(1).max(160);
 const date = z.string().refine(isDateString, "Use a date like 2026-11-30");
@@ -64,11 +64,12 @@ export const updateTaskListSchema = z.object({ title: listTitle.optional(), prev
 
 export const taskQuerySchema = z.object({
 	listId: id.optional(),
-	view: z.enum(["starred", "today", "upcoming"]).optional(),
+	view: z.enum(TASK_VIEWS).optional(),
 	dueFrom: date.optional(),
 	dueTo: date.optional(),
 	messageId: id.optional(),
 	completed: z.boolean().optional(),
+	q: z.string().trim().min(1, "Enter something to search for").max(TASK_SEARCH_MAX).optional(),
 });
 
 /** The first validation message of a failed parse, for a 400 response. */

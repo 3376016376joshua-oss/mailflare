@@ -121,12 +121,15 @@ Session auth only (cookie or the app's bearer session token); cookie mutations a
 | `view=starred` | Open starred tasks across all lists, most recently starred first |
 | `view=today` | Open tasks across all lists due today or overdue |
 | `view=upcoming` | Open tasks across all lists due after today |
+| `view=completed` | Completed tasks across all lists, most recently completed first |
 | `dueFrom`, `dueTo` | Inclusive dates. With both (at most 370 days apart), `occurrences` is filled |
 | `messageId` | Tasks made from that email |
 | `completed=1` / `completed=0` | Completed only / open only. Omitted: both |
+| `q` | Text search, at most 200 characters: tasks whose title or notes contain every word, open and completed |
 
 - **Time zone.** "Today" and the date a timed task falls on are computed in the viewer's zone: the account's saved zone, else the `X-Time-Zone` header that `authFetch` sends. A task at 23:30 New York time is tomorrow's task in Berlin. In the browser use `taskLocalDate(task, getUserTimeZone())` to place a task on a day; do not read `dueDate` of a timed task for that.
-- **Order.** A list reads top to bottom: each open task followed by its open subtasks, then completed tasks, most recent first. Date queries read by due date (date-only before timed within a day), open before completed. `sortTasksForQuery` is the same order for the browser.
+- **Order.** A list reads top to bottom: each open task followed by its open subtasks, then completed tasks, most recent first. Date queries read by due date (date-only before timed within a day), open before completed. A search across lists (`q` without `listId`, a view or dates) has no manual order to follow, because ranks only compare inside one list: open tasks by due date, undated ones after them with the newest first, then completed tasks, most recent first. `sortTasksForQuery` is the same order for the browser.
+- **Search.** `q` is cut into words (the first 8 count), and a task matches when each word is somewhere in its title or its notes: "dentist invoice" finds "Call the dentist" with "ask about the invoice" in its notes. It is a substring match through `containsLike` (`src/db/sql.ts`), so `%` and `_` are plain characters and it runs on SQLite, PostgreSQL and MySQL alike; there is no index, since it only scans one user's tasks. Case is ignored, on SQLite for ASCII letters only (its `LIKE` does not fold "É"). A subtask matches on its own text and comes back as a row of its own. `q` combines with every other filter; only spaces is no search. `taskMatchesSearch` in `task-utils.ts` is the same rule for the browser's optimistic updates.
 - **Calendar window.** `dueFrom` + `dueTo` returns the tasks due in the window (completed ones too unless `completed=0`) in `tasks`, and in `occurrences` the future occurrences of open repeating tasks that fall in the window. An occurrence is a projection, not a row: `{ id: "<taskId>@<date>", taskId, listId, title, starred, dueDate, dueAt, timeZone, repeatIndex }`. Show it, and act on `taskId` (the open task of the series). The current occurrence of a series is the task itself and is not repeated in `occurrences`.
 - **Limits.** One response carries at most 2000 tasks (open first, then the most recently completed) and sets `truncated` beyond that; at most 1000 occurrences.
 
@@ -139,7 +142,7 @@ All Tasks surfaces share one TanStack Query cache (the client is already mounted
 | Hook | Returns |
 | --- | --- |
 | `useTaskLists()` | `data: { lists, migrationRequired }` |
-| `useTasks(query, { enabled? })` | `data: { tasks, occurrences, truncated, migrationRequired }` for a `TaskQuery` (`{ listId }`, `{ view: "today" }`, `{ dueFrom, dueTo }`, `{ messageId }`, with optional `completed`) |
+| `useTasks(query, { enabled?, keepPrevious? })` | `data: { tasks, occurrences, truncated, migrationRequired }` for a `TaskQuery` (`{ listId }`, `{ view: "today" }`, `{ dueFrom, dueTo }`, `{ messageId }`, `{ q }`, with optional `completed`). `keepPrevious` leaves the last answer up while a changed query loads, which is what a search being typed wants |
 | `useTask(id)` | One task, shown at once from whatever query already loaded it |
 
 `buildTaskTree(tasks)` groups a flat response into top-level tasks with `subtasks`. When `migrationRequired` is true, show the `tasks.error.migrationRequired` text instead of an empty list.
@@ -180,14 +183,16 @@ The `/tasks` app and the side panel are built from the same parts in `src/compon
 
 | Part | What it is |
 | --- | --- |
-| `TaskListView` (`task-list-view.tsx`) | The tasks of one list, smart view or day (`scope`): the "Add a task" box, the open tasks, the collapsed Completed section (a list and a day have one). A day (`{ kind: "date", date }`) lists the tasks due that date across all lists in the order of the day, with the coming occurrences of repeating tasks among them (`TaskOccurrenceRow`); a task added there is due that day. In a list, tasks are dragged by their handle to reorder and to nest one level (a step to the right nests); with the handle focused the arrow keys do the same (up, down, right = make a subtask, left = back to the top level). `focusTaskId` scrolls to a task and puts the cursor in it |
-| `TaskRow`, `CompletedTaskRow`, `TaskAddRow` | One task: checkbox, title and notes edited in place, due date, repeat rule and email as chips, star, menu. The email chip opens `/inbox/<messageId>` |
+| `TaskListView` (`task-list-view.tsx`) | The tasks of one list, smart view, day or search (`scope`): the "Add a task" box, the open tasks, the collapsed Completed section (a list and a day have one). Search results (`{ kind: "search", text }`) and the Completed view are one run of rows from every list instead, completed ones among them, each with its list as a chip, and without the "Add a task" box (`scopeTakesNewTasks`): a task typed there would not show. A day (`{ kind: "date", date }`) lists the tasks due that date across all lists in the order of the day, with the coming occurrences of repeating tasks among them (`TaskOccurrenceRow`); a task added there is due that day. In a list, tasks are dragged by their handle to reorder and to nest one level (a step to the right nests); with the handle focused the arrow keys do the same (up, down, right = make a subtask, left = back to the top level). `focusTaskId` scrolls to a task and puts the cursor in it |
+| `TaskRow`, `CompletedTaskRow`, `TaskAddRow` | One task: checkbox, title and notes edited in place, due date, repeat rule and email as chips, star, menu. The email chip opens `/inbox/<messageId>`. `TaskListChip` (`task-controls.tsx`) is the list chip of rows that mix lists |
+| `TaskSearchBox` (`task-search-box.tsx`), `use-task-search.ts` | The search pill, and the two ways its text becomes a search: `useAddressSearchText` keeps it in the address (the Tasks app), `useSettledText` in the component (the panel). Both wait for a pause in typing |
 | `TaskScheduleDialog` | Date, optional time, and the repeat rule (every N days / weeks / months / years; ends never, on a date, or after N times). It sends only what changed |
-| `TasksPanel`, `TasksPanelToggle` (`tasks-panel.tsx`) | The side panel and its header button. The panel listens for `mailflare:tasks-open-panel` and starts on the last-used list |
+| `TasksPanel`, `TasksPanelToggle` (`tasks-panel.tsx`) | The side panel and its header button. The panel listens for `mailflare:tasks-open-panel` and starts on the last-used list. Its search box covers the list, view or day with the results until it is emptied; picking a list (in the switcher or on a result's chip) empties it |
 | `useTaskActions`, `useTaskListActions` | The mutation hooks wired to error toasts |
 | `task-order-utils.ts`, `task-view-utils.ts` | The pure rules: where a dragged task lands, the sections of a smart view, the rows of a day, the list a task added outside a list goes to, what the schedule form sends |
 
-- **Addresses.** `/tasks` shows the first list, `/tasks?list=<id>` a list, `/tasks?view=starred|today|upcoming` a smart view, `/tasks?date=YYYY-MM-DD` the tasks due that day (no menu entry leads there; the panel's "Open in Tasks" does when it shows a day). `/tasks?task=<id>` opens the list that holds the task with the cursor in it; use it for links to a task (`taskScopeHref` builds all of them).
+- **Addresses.** `/tasks` shows the first list, `/tasks?list=<id>` a list, `/tasks?view=starred|today|upcoming|completed` a smart view, `/tasks?date=YYYY-MM-DD` the tasks due that day (no menu entry leads there; the panel's "Open in Tasks" does when it shows a day). `/tasks?task=<id>` opens the list that holds the task with the cursor in it; use it for links to a task (`taskScopeHref` builds all of them).
+- **Search.** The box at the top of the Tasks menu puts its text in the address as `q`, on top of whatever list, view or day was open (`/tasks?list=<id>&q=invoice`, built by `taskSearchHref`), so a reload keeps the search and emptying the box (the cross, Escape, or the cross beside the "Results for" title) returns to where it started. Typing replaces the history entry instead of adding one per pause. A menu link leaves the search, and the box follows the address. On the narrow rail the box is a button that opens the menu with the cursor in it; on a phone it is in the menu drawer, and Enter closes the drawer over the results. Create has no box to go to among results or in Completed, so there it opens the last-used list with the cursor in its "Add a task" box.
 - **One dock, one panel.** Mail and Calendar share the right-hand dock between the Assistant and Tasks: `useDashboardState` answers `tasksOpen` / `setTasksOpen` next to the Assistant's state, opening either closes the other, and the choice is remembered like the Assistant's. Below 640px the header has no room for the Tasks button, so it is hidden there; the panel still opens on `openTasksPanel(...)` and covers the page like the Assistant, and the Tasks app is in the apps menu. While either panel is open, Mail hides its phone Compose button, which would otherwise sit on top of the panel.
 - **Crowded tasks on the calendar.** In the week and day views a timed task is a chip at its time, and tasks whose chips would overlap share the row. When the column is too narrow for that (each chip under `MIN_TIMED_CHIP_WIDTH`, 56px, in `layoutTimedTasks`, which is given the measured column width), the tasks of a time slot merge into one "N tasks" chip (`CalendarTaskGroupChip`). It asks the panel for that day (`openTasksPanel({ date })`). A wide column, such as the day view's, keeps the tasks apart.
 - **Create button.** `focusTaskAddRow()` puts the cursor in the "Add a task" box of the list on screen. A list that was just created opens with the cursor there too: its creator calls `focusTaskAddRowOnOpen(listId)` before showing it.
@@ -215,7 +220,7 @@ One tool layer (`src/lib/tasks/tools.ts`, shaped like `src/lib/calendar/tools.ts
 | Tool | Permission | What it does |
 | --- | --- | --- |
 | `list_task_lists` | read | The user's lists with `openTaskCount` |
-| `list_tasks` | read | Tasks of one list or all lists; `view` (`starred`, `today` including overdue, `upcoming`), `dueFrom` / `dueTo`, `status` (`open` by default, `completed`, `all`), `limit` (100 by default, at most 500). With both dates it also returns `upcomingOccurrences` of repeating tasks |
+| `list_tasks` | read | Tasks of one list or all lists; `view` (`starred`, `today` including overdue, `upcoming`, `completed`), `query` (text search in titles and notes, every word has to be there), `dueFrom` / `dueTo`, `status` (`open` by default, `completed`, `all`; the `completed` view lists completed tasks whatever it says), `limit` (100 by default, at most 500). With both dates it also returns `upcomingOccurrences` of repeating tasks |
 | `get_task` | read | One task with its `subtasks` |
 | `create_task` | write | `title` (optional with `emailId`), `notes`, `listId`, `parentTaskId`, `due`, `repeat`, `starred`, `emailId` |
 | `update_tasks` | write | Up to 20 tasks per call: `title`, `notes`, `due` (null clears), `repeat` (null stops), `starred`, `completed`, and moves with `listId`, `parentTaskId` (null = top level), `afterTaskId` (null or omitted = first) |
@@ -241,13 +246,13 @@ The address is one value, `SOURCE_CODE_URL`: `vars` in `wrangler.jsonc` on Worke
 
 All Tasks strings use the key prefix `tasks.` (other local features: `local.`). Do not edit the 34 catalogs by hand:
 
-1. Put the English text in a fragment under `src/lib/i18n/local/`, one file per work stream (for example `tasks-app.json`), using its own sub-prefix (`tasks.app.`, `tasks.panel.`, `tasks.mail.`, `tasks.calendar.`, `tasks.reminder.`, `tasks.agent.`).
+1. Put the English text in a fragment under `src/lib/i18n/local/`, one file per work stream (for example `tasks-app.json`), using its own sub-prefix (`tasks.app.`, `tasks.panel.`, `tasks.find.`, `tasks.mail.`, `tasks.calendar.`, `tasks.reminder.`, `tasks.agent.`).
 2. Run `node scripts/local-i18n.mjs`. It writes every fragment key into `src/lib/i18n/en.json` and each `public/locales/*.json` (English text in every language), always at the end of the file and in fragment order.
 3. Commit the fragment and the catalogs. `tests/local-i18n.test.mjs` fails when they are out of step.
 
 Because the catalogs are generated from the fragments, a merge conflict in a catalog (two branches adding strings, or an upstream release) is resolved by keeping either side and running the script again. A key removed from a fragment has to be removed from the catalogs by hand.
 
-Shared keys already exist in `tasks-core.json`: `tasks.title`, `tasks.view.*` (Today, Upcoming, Starred), `tasks.action.*` (add, addSubtask, complete, reopen, star, unstar, delete), `tasks.due.*`, `tasks.repeat.*`, `tasks.error.*`. Plural keys follow the catalog convention (`key.one`, `key.other`, called as `t("key", { count })`).
+Shared keys already exist in `tasks-core.json`: `tasks.title`, `tasks.view.*` (Today, Upcoming, Starred; Completed is `tasks.find.viewCompleted`), `tasks.action.*` (add, addSubtask, complete, reopen, star, unstar, delete), `tasks.due.*`, `tasks.repeat.*`, `tasks.error.*`. Plural keys follow the catalog convention (`key.one`, `key.other`, called as `t("key", { count })`).
 
 ## Keeping the fork cheap
 

@@ -12,10 +12,9 @@ import { describeTaskRepeat, formatTaskDue } from "@/lib/tasks/format";
 import { TASK_NOTES_MAX, TASK_TITLE_MAX, isTaskOverdue } from "@/lib/tasks/task-utils";
 import type { Task, TaskList } from "@/lib/tasks/types";
 import { cn } from "@/lib/utils";
-import { AutoGrowTextarea, GripIcon, TaskCheckbox, TaskChip, TaskStarButton, taskChipLinkClass, taskIconButtonClass, taskMenuClass, taskMenuItemClass } from "./task-controls";
+import { AutoGrowTextarea, GripIcon, TaskCheckbox, TaskChip, TaskListChip, TaskStarButton, taskChipLinkClass, taskIconButtonClass, taskMenuClass, taskMenuItemClass } from "./task-controls";
 import type { TaskMoveDirection } from "./task-order-utils";
 import { TaskScheduleDialog } from "./task-schedule-dialog";
-import { taskScopeHref } from "./task-view-utils";
 import type { TaskActions } from "./use-task-actions";
 
 export type TaskRowReorder = {
@@ -202,9 +201,7 @@ export const TaskRow = memo(function TaskRow({ task, depth = 0, active, onActive
 								<span className="truncate">{task.message.subject || t("tasks.app.emailChip")}</span>
 							</Link>
 						)}
-						{listTitle && (onOpenList
-							? <TaskChip onClick={() => onOpenList(task.listId)} className="max-w-[12rem] border-transparent bg-neutral-100">{listTitle}</TaskChip>
-							: <Link href={taskScopeHref({ kind: "list", listId: task.listId })} className={cn(taskChipLinkClass, "max-w-[12rem] border-transparent bg-neutral-100")}><span className="truncate">{listTitle}</span></Link>)}
+						{listTitle && <TaskListChip listId={task.listId} title={listTitle} onOpen={onOpenList} />}
 					</div>
 				)}
 			</div>

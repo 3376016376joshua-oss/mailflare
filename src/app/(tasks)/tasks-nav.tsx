@@ -1,39 +1,42 @@
 "use client";
 
-import { useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import clsx from "clsx";
-import { CalendarClock, CalendarDays, ListChecks, Plus, Star } from "@/components/icons";
+import { CalendarClock, CalendarDays, CheckCircle2, ListChecks, Plus, Search, Star } from "@/components/icons";
 import { useLanguage } from "@/components/language-provider";
 import { PoweredBy } from "@/components/sidebar-footer";
 import { useSidebar } from "@/components/sidebar-state";
 import { TaskListDialog } from "@/components/tasks/task-list-dialog";
 import { focusTaskAddRow, focusTaskAddRowOnOpen } from "@/components/tasks/task-list-view";
 import { isSameListSpot, keyboardListMove, resolveListDrop } from "@/components/tasks/task-order-utils";
-import { resolveTaskScope, taskScopeHref } from "@/components/tasks/task-view-utils";
+import { TaskSearchBox } from "@/components/tasks/task-search-box";
+import { listForNewTask, normalizeTaskSearch, resolveTaskScope, scopeTakesNewTasks, taskScopeHref, taskSearchHref } from "@/components/tasks/task-view-utils";
 import { useKeepFocus } from "@/components/tasks/use-keep-focus";
 import { useSortDrag } from "@/components/tasks/use-sort-drag";
 import { useTaskListActions } from "@/components/tasks/use-task-actions";
+import { useAddressSearchText } from "@/components/tasks/use-task-search";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip } from "@/components/ui/tooltip";
 import { isPendingId } from "@/lib/tasks/cache-utils";
 import { useTaskLists } from "@/lib/tasks/client";
-import { rememberLastTaskList } from "@/lib/tasks/last-list";
+import { getLastTaskListId, rememberLastTaskList } from "@/lib/tasks/last-list";
 import type { TaskView } from "@/lib/tasks/types";
 
 const VIEWS = [
 	{ view: "starred", labelKey: "tasks.view.starred", icon: Star },
 	{ view: "today", labelKey: "tasks.view.today", icon: CalendarDays },
 	{ view: "upcoming", labelKey: "tasks.view.upcoming", icon: CalendarClock },
+	{ view: "completed", labelKey: "tasks.find.viewCompleted", icon: CheckCircle2 },
 ] as const satisfies readonly { view: TaskView; labelKey: string; icon: unknown }[];
 
 type ListDropTarget = { index: number; depth: number; previousId: string | null };
 
-/** The Tasks menu: Create, the smart views, then the user's lists (drag or Alt+Arrow to reorder) and New list. */
+/** The Tasks menu: the search box, Create, the smart views, then the user's lists (drag or Alt+Arrow to reorder) and New list. */
 export function TasksNav({ onNavigate }: { onNavigate?: () => void }) {
 	const { t } = useLanguage();
-	const { minimal, mobile } = useSidebar();
+	const { minimal, mobile, toggle } = useSidebar();
 	const router = useRouter();
 	const params = useSearchParams();
 	const hintId = useId();
@@ -43,8 +46,19 @@ export function TasksNav({ onNavigate }: { onNavigate?: () => void }) {
 	const listRef = useRef<HTMLUListElement | null>(null);
 	const lists = data?.lists ?? [];
 	const ids = lists.map((list) => list.id);
-	const scope = resolveTaskScope({ view: params.get("view"), date: params.get("date"), list: params.get("list") }, ids);
+	const scope = resolveTaskScope({ view: params.get("view"), date: params.get("date"), list: params.get("list"), q: params.get("q") }, ids);
 	const compact = minimal && !mobile;
+	// The search is part of the address, so it survives a reload and Back leaves it. Typing replaces the
+	// entry instead of adding one per pause.
+	const search = useAddressSearchText(normalizeTaskSearch(params.get("q")), (text) => router.replace(taskSearchHref(params.toString(), text)));
+	const searchRef = useRef<HTMLInputElement | null>(null);
+	// The narrow rail has no room for the box: its search button opens the menu and puts the cursor in it.
+	const focusSearchOnExpand = useRef(false);
+	useEffect(() => {
+		if (compact || !focusSearchOnExpand.current) return;
+		focusSearchOnExpand.current = false;
+		searchRef.current?.focus();
+	}, [compact]);
 	const keepFocus = useKeepFocus(listRef, "data-sort-id", ids.join("\n"));
 
 	const { dragId, startDrag, guardClick, overlay } = useSortDrag<ListDropTarget>({
@@ -64,14 +78,44 @@ export function TasksNav({ onNavigate }: { onNavigate?: () => void }) {
 		keepFocus(id);
 	}
 
+	function submitSearch() {
+		search.submit();
+		if (!onNavigate) return;
+		// In the phone's drawer the results are underneath: put the keyboard away and close it.
+		searchRef.current?.blur();
+		onNavigate();
+	}
+
+	function create() {
+		onNavigate?.();
+		if (!scope || scopeTakesNewTasks(scope)) {
+			focusTaskAddRow();
+			return;
+		}
+		// Search results and Completed have no "Add a task" box: go to the list the user last worked in.
+		const listId = listForNewTask(ids, getLastTaskListId());
+		if (!listId) return;
+		focusTaskAddRowOnOpen(listId);
+		router.push(taskScopeHref({ kind: "list", listId }));
+	}
+
 	const rowClass = (active: boolean) => clsx("flex h-10 items-center gap-3 rounded-full text-sm max-md:h-11 max-md:text-base", compact ? "w-10 justify-center" : "px-4", active ? "bg-blue-100 font-medium text-blue-900" : "text-neutral-700 hover:bg-neutral-200/60");
 	const withTooltip = (label: string, node: React.ReactElement) => (compact ? <Tooltip label={label} placement="right">{node}</Tooltip> : node);
 
 	return (
 		<div className="flex min-h-0 flex-1 flex-col">
 			<div className="min-h-0 flex-1 overflow-y-auto px-3 pt-1">
+				{compact ? (
+					<Tooltip label={t("tasks.find.search")} placement="right">
+						<button type="button" onClick={() => { focusSearchOnExpand.current = true; toggle(); }} aria-label={t("tasks.find.search")} className={clsx(rowClass(scope?.kind === "search"), "mb-3")}>
+							<Search size={16} aria-hidden="true" className="shrink-0" />
+						</button>
+					</Tooltip>
+				) : (
+					<TaskSearchBox inputRef={searchRef} value={search.text} onChange={search.setText} onSubmit={submitSearch} className="mb-3" />
+				)}
 				{withTooltip(t("tasks.app.create"), (
-					<button type="button" onClick={() => { onNavigate?.(); focusTaskAddRow(); }} aria-label={compact ? t("tasks.app.create") : undefined} className={clsx("mb-4 flex h-14 items-center gap-3 rounded-2xl bg-white text-sm font-medium text-neutral-800 shadow-md transition-shadow hover:shadow-lg", compact ? "w-14 justify-center" : "w-fit px-5")}>
+					<button type="button" onClick={create} aria-label={compact ? t("tasks.app.create") : undefined} className={clsx("mb-4 flex h-14 items-center gap-3 rounded-2xl bg-white text-sm font-medium text-neutral-800 shadow-md transition-shadow hover:shadow-lg", compact ? "w-14 justify-center" : "w-fit px-5")}>
 						<Plus size={22} aria-hidden="true" />{!compact && t("tasks.app.create")}
 					</button>
 				))}

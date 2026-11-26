@@ -2,9 +2,11 @@
 
 import { forwardRef, useCallback, useLayoutEffect, useRef } from "react";
 import type { ComponentProps, ReactNode } from "react";
+import Link from "next/link";
 import { Check, Star } from "@/components/icons";
 import { useLanguage } from "@/components/language-provider";
 import { cn } from "@/lib/utils";
+import { taskScopeHref } from "./task-view-utils";
 
 /** The small building blocks every Tasks surface shares: the round checkbox, the star, chips and the growing text box. */
 
@@ -67,6 +69,16 @@ export function TaskChip({ icon, children, tone = "neutral", onClick, label, cla
 }
 
 export const taskChipLinkClass = cn(chipClass, chipTones.neutral, "hover:bg-neutral-200/60 focus-visible:outline-2 focus-visible:outline-blue-600");
+
+/**
+ * The list a task is in, on rows that mix lists (smart views, a day, search results). With `onOpen` it
+ * switches lists in place (the side panel); without it, it links to the list in the Tasks app.
+ */
+export function TaskListChip({ listId, title, onOpen }: { listId: string; title: string; onOpen?: (listId: string) => void }) {
+	const className = "max-w-[12rem] border-transparent bg-neutral-100";
+	if (onOpen) return <TaskChip onClick={() => onOpen(listId)} className={className}>{title}</TaskChip>;
+	return <Link href={taskScopeHref({ kind: "list", listId })} className={cn(taskChipLinkClass, className)}><span className="truncate">{title}</span></Link>;
+}
 
 const supportsFieldSizing = () => typeof CSS !== "undefined" && CSS.supports("field-sizing", "content");
 

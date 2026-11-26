@@ -1,5 +1,5 @@
 import { dateFromZonedFields, normalizeTimeZone, zonedDateFields } from "@/lib/time/utils";
-import type { Task, TaskQuery, TaskRepeatFreq, TaskRepeatRule } from "./types";
+import type { Task, TaskQuery, TaskRepeatFreq, TaskRepeatRule, TaskView } from "./types";
 
 /**
  * Pure helpers shared by the tasks service (server) and the tasks UI (browser): rank strings for manual
@@ -12,6 +12,11 @@ import type { Task, TaskQuery, TaskRepeatFreq, TaskRepeatRule } from "./types";
 export const TASK_TITLE_MAX = 1024;
 export const TASK_NOTES_MAX = 8192;
 export const TASK_LIST_TITLE_MAX = 255;
+/** Longest search text (`q`). */
+export const TASK_SEARCH_MAX = 200;
+
+/** The smart views, in the order the menus list them. */
+export const TASK_VIEWS = ["starred", "today", "upcoming", "completed"] as const satisfies readonly TaskView[];
 
 // ---- Rank strings (fractional indexing) ----
 //
@@ -362,6 +367,23 @@ export function buildTaskTree<T extends Pick<Task, "id" | "parentId" | "position
 	return roots.sort(byPosition).map((task) => ({ ...task, subtasks: (children.get(task.id) ?? []).sort(byPosition) }));
 }
 
+// ---- Search ----
+
+/** Words one search looks for; the rest of a longer text is ignored, which keeps the statement small. */
+const MAX_SEARCH_TERMS = 8;
+
+/** The words of a search text. A task matches when its title or its notes contain every one of them. */
+export function taskSearchTerms(text: string | null | undefined): string[] {
+	return (text ?? "").split(/\s+/).filter(Boolean).slice(0, MAX_SEARCH_TERMS);
+}
+
+/** Whether a task matches a search text: the browser's twin of the service's `LIKE` predicates. */
+export function taskMatchesSearch(task: Pick<Task, "title" | "notes">, text: string | null | undefined): boolean {
+	const title = task.title.toLowerCase();
+	const notes = task.notes.toLowerCase();
+	return taskSearchTerms(text).every((term) => title.includes(term.toLowerCase()) || notes.includes(term.toLowerCase()));
+}
+
 // ---- Queries ----
 
 const time = (value: string | null) => (value ? new Date(value).getTime() : 0);
@@ -369,19 +391,28 @@ const time = (value: string | null) => (value ? new Date(value).getTime() : 0);
 /**
  * The order a `GET /api/tasks` response comes in, also used to keep a cached response in order after an
  * optimistic change. A list reads top to bottom, each open task followed by its open subtasks, then
- * completed tasks, most recent first. Date-driven queries read by due date, Starred by most recently starred.
+ * completed tasks, most recent first. Date-driven queries read by due date, Starred by most recently
+ * starred, Completed by most recently completed. A search across lists has no manual order to follow
+ * (ranks only compare inside one list): open tasks read by due date, then newest first, then the completed ones.
  */
 export function sortTasksForQuery(tasks: readonly Task[], query: TaskQuery, timeZone: string): Task[] {
 	const byPosition = (a: Task, b: Task) => compareRanks(a.position, b.position) || (a.id < b.id ? -1 : 1);
+	const byCompletion = (a: Task, b: Task) => time(b.completedAt) - time(a.completedAt) || byPosition(a, b);
 	if (query.view === "starred") return [...tasks].sort((a, b) => time(b.starredAt) - time(a.starredAt) || byPosition(a, b));
+	if (query.view === "completed") return [...tasks].sort(byCompletion);
 	const open = tasks.filter((task) => task.status !== "completed");
 	const completed = tasks.filter((task) => task.status === "completed");
 	if (query.view !== undefined || query.dueFrom !== undefined || query.dueTo !== undefined) {
 		const byDue = (a: Task, b: Task) => compareTasksByDue(a, b, timeZone) || byPosition(a, b);
 		return [...open.sort(byDue), ...completed.sort(byDue)];
 	}
+	if (query.q !== undefined && query.listId === undefined) {
+		const dueOf = (task: Task) => ({ dueDate: task.dueDate, dueAt: task.dueAt, position: "" });
+		const byDueThenNewest = (a: Task, b: Task) => compareTasksByDue(dueOf(a), dueOf(b), timeZone) || time(b.createdAt) - time(a.createdAt) || (a.id < b.id ? -1 : 1);
+		return [...open.sort(byDueThenNewest), ...completed.sort(byCompletion)];
+	}
 	const tree = buildTaskTree(open).flatMap(({ subtasks, ...task }) => [task as Task, ...subtasks]);
-	return [...tree, ...completed.sort((a, b) => time(b.completedAt) - time(a.completedAt) || byPosition(a, b))];
+	return [...tree, ...completed.sort(byCompletion)];
 }
 
 /**
@@ -393,8 +424,9 @@ export function taskMatchesQuery(task: Task, query: TaskQuery, today: string, ti
 	if (query.listId !== undefined && task.listId !== query.listId) return false;
 	if (query.messageId !== undefined && task.message?.id !== query.messageId) return false;
 	if (query.completed !== undefined && query.completed !== completed) return false;
-	if (query.view !== undefined && completed) return false;
+	if (query.view !== undefined && completed !== (query.view === "completed")) return false;
 	if (query.view === "starred" && !task.starred) return false;
+	if (query.q !== undefined && !taskMatchesSearch(task, query.q)) return false;
 	const date = taskLocalDate(task, timeZone);
 	if (query.view === "today" && !(date !== null && date <= today)) return false;
 	if (query.view === "upcoming" && !(date !== null && date > today)) return false;

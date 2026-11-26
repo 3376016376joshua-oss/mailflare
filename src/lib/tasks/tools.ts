@@ -4,9 +4,9 @@ import { getDb } from "@/db";
 import { messages } from "@/db/schema";
 import type { AgentToolContext } from "@/lib/agent/types";
 import { normalizeTimeZone } from "@/lib/time/utils";
-import { createTaskSchema, firstIssue, moveTaskSchema, TASK_NOTES_MAX, TASK_TITLE_MAX, updateTaskSchema } from "./schemas";
+import { createTaskSchema, firstIssue, moveTaskSchema, TASK_NOTES_MAX, TASK_SEARCH_MAX, TASK_TITLE_MAX, updateTaskSchema } from "./schemas";
 import { createTask, getTask, listTaskLists, listTasks, moveTask, TaskError, updateTask } from "./service";
-import { dueInputOf, MAX_REPEAT_COUNT, MAX_REPEAT_INTERVAL } from "./task-utils";
+import { dueInputOf, MAX_REPEAT_COUNT, MAX_REPEAT_INTERVAL, TASK_VIEWS } from "./task-utils";
 import { TASK_TOOL_NAMES } from "./tool-scopes";
 import type { TaskToolContext, TaskToolName, ToolTask } from "./tool-types";
 import type { Task, TaskMutationResponse, TaskOccurrence, TaskQuery } from "./types";
@@ -58,10 +58,11 @@ export const taskToolSchemas = {
 	list_task_lists: z.object({}),
 	list_tasks: z.object({
 		listId: id.optional().describe("Only this list. Leave out for all lists."),
-		view: z.enum(["starred", "today", "upcoming"]).optional().describe("starred: open starred tasks. today: open tasks due today or overdue. upcoming: open tasks due after today."),
+		view: z.enum(TASK_VIEWS).optional().describe("starred: open starred tasks. today: open tasks due today or overdue. upcoming: open tasks due after today. completed: completed tasks, most recently completed first."),
+		query: z.string().trim().min(1).max(TASK_SEARCH_MAX).optional().describe("Search text: only tasks whose title or notes contain every word of it, whatever the case."),
 		dueFrom: date.optional().describe("Only tasks due on or after this date."),
 		dueTo: date.optional().describe("Only tasks due on or before this date."),
-		status: z.enum(["open", "completed", "all"]).default("open"),
+		status: z.enum(["open", "completed", "all"]).default("open").describe("Use all to search completed tasks too. The completed view lists completed tasks whatever this says."),
 		limit: z.number().int().min(1).max(MAX_LISTED).default(100),
 	}),
 	get_task: z.object({ taskId: id }),
@@ -80,7 +81,7 @@ export const taskToolSchemas = {
 
 export const taskToolDescriptions: Record<TaskToolName, string> = {
 	list_task_lists: "List the user's task lists with the number of open tasks in each.",
-	list_tasks: "List the user's tasks: one list or all lists, a view (starred, today including overdue, upcoming), a due date range, and open (default), completed or all. A subtask names its parent in parentTaskId.",
+	list_tasks: "List or search the user's tasks: one list or all lists, a view (starred, today including overdue, upcoming, completed), a search text matched against titles and notes, a due date range, and open (default), completed or all. A subtask names its parent in parentTaskId.",
 	get_task: "Get one task by ID with its notes, due date, repeat rule, linked email and subtasks.",
 	create_task: "Create a task in one of the user's lists. This saves immediately. Optional due date (with or without a time), repeat rule, star, parent task, and an email to link.",
 	update_tasks: "Change up to 20 tasks by ID: edit the title, notes, due date or repeat rule, complete or reopen, star or unstar, or move to another list, under a parent or after a sibling. This saves immediately. Completing a repeating task creates its next occurrence. Tasks cannot be deleted with these tools.",
@@ -165,10 +166,12 @@ const handlers: { [K in TaskToolName]: (context: TaskToolContext, input: Inputs[
 	},
 
 	async list_tasks(context, input) {
-		if (input.view && input.status === "completed") throw new Error("The starred, today and upcoming views list open tasks only");
+		if (input.view && input.view !== "completed" && input.status === "completed") throw new Error("The starred, today and upcoming views list open tasks only");
 		// An unknown list would read as "no tasks", which an assistant then reports as a fact.
 		if (input.listId && !(await userLists(context)).some((list) => list.id === input.listId)) throw new Error("List not found");
-		const query: TaskQuery = defined({ listId: input.listId, view: input.view, dueFrom: input.dueFrom, dueTo: input.dueTo, completed: input.status === "all" ? undefined : input.status === "completed" });
+		// The completed view says by itself which tasks it lists; `status` defaults to open and would empty it.
+		const completed = input.view === "completed" || input.status === "all" ? undefined : input.status === "completed";
+		const query: TaskQuery = defined({ listId: input.listId, view: input.view, q: input.query, dueFrom: input.dueFrom, dueTo: input.dueTo, completed });
 		const response = await listTasks(context.env, context.user, query, { timeZone: zoneOf(context) });
 		if (response.migrationRequired) throw new Error(MIGRATION_MESSAGE);
 		return {

@@ -37,6 +37,7 @@ function api(page: Page) {
 		lists: async () => (await send("get", "/api/tasks/lists")).lists as ApiList[],
 		tasks: async (query: string) => (await send("get", `/api/tasks?${query}`)).tasks as ApiTask[],
 		create: async (data: object) => (await send("post", "/api/tasks", data)).task as ApiTask,
+		update: async (id: string, data: object) => (await send("patch", `/api/tasks/${id}`, data)).task as ApiTask,
 		createList: async (title: string) => (await send("post", "/api/tasks/lists", { title })).list as ApiList,
 	};
 }
@@ -467,6 +468,181 @@ test("crowded timed tasks merge into one chip on the calendar, which opens their
 	// The same day in the Tasks app.
 	await page.goto(`/tasks?date=${date}`);
 	await expect.poll(() => shownTitles(page)).toEqual(["Also today", "Water the plants", "Book flights", "Call the bank", "Send invoice"]);
+});
+
+/** Tasks in two lists, three of them about an invoice (one in its notes only, one completed). */
+async function seedInvoices(page: Page) {
+	const { create, createList, update, lists } = api(page);
+	const main = (await lists())[0];
+	const errands = await createList("Errands");
+	await create({ title: "Buy milk" });
+	const dentist = await create({ title: "Call the dentist", notes: "Ask about the invoice" });
+	const pay = await create({ title: "Pay the invoice", listId: errands.id });
+	const sent = await create({ title: "Send invoice to Acme", listId: errands.id });
+	await update(sent.id, { completed: true });
+	return { main, errands, dentist, pay, sent };
+}
+
+test("the search box of the Tasks menu finds tasks in every list, and Completed lists what is done", async ({ page }) => {
+	const { tasks } = api(page);
+	const { errands, dentist, pay, sent } = await seedInvoices(page);
+
+	await page.goto(`/tasks?list=${errands.id}`);
+	await expect(page.getByRole("heading", { name: "Errands", level: 1 })).toBeVisible();
+	const search = page.getByRole("textbox", { name: "Search tasks" });
+	const addBox = page.getByRole("textbox", { name: "Add a task" });
+	const results = page.getByRole("list", { name: "Search results" });
+
+	// Results come as the text is typed: open tasks from both lists, then the completed one, each naming its list.
+	await search.fill("INVOICE");
+	await expect(page.getByRole("heading", { name: 'Results for "INVOICE"', level: 1 })).toBeVisible();
+	await expect(page.getByText("3 results", { exact: true })).toBeVisible();
+	expect((await shownTitles(page)).sort()).toEqual(["Call the dentist", "Pay the invoice"]);
+	await expect(row(page, dentist.id).getByRole("link", { name: "My Tasks" })).toBeVisible();
+	await expect(row(page, dentist.id)).toContainText("Ask about the invoice");
+	await expect(row(page, sent.id)).toContainText("Send invoice to Acme");
+	await expect(row(page, sent.id).getByRole("link", { name: "Errands" })).toBeVisible();
+	await expect(results.getByRole("listitem").last()).toContainText("Send invoice to Acme");
+	// Nothing is added among results, and the search stays in the box while it runs.
+	await expect(addBox).toHaveCount(0);
+	await expect(search).toBeFocused();
+	// The search is in the address, on top of the list it was started from: a reload keeps it.
+	await expect(page).toHaveURL(new RegExp(`list=${errands.id}&q=INVOICE$`));
+	await page.reload();
+	await expect(page.getByText("3 results", { exact: true })).toBeVisible();
+	await expect(search).toHaveValue("INVOICE");
+
+	// More words narrow it down; nothing found says so.
+	await search.fill("invoice  dentist");
+	await expect(page.getByText("1 result", { exact: true })).toBeVisible();
+	expect(await shownTitles(page)).toEqual(["Call the dentist"]);
+	await search.fill("no such thing");
+	await expect(page.getByText("No tasks found")).toBeVisible();
+
+	// A result is a task like any other: completing it keeps it among the results, as completed.
+	await search.fill("invoice");
+	await expect(row(page, pay.id)).toBeVisible();
+	await row(page, pay.id).getByRole("checkbox").click();
+	await expect(row(page, pay.id).getByRole("checkbox")).toBeChecked();
+	await expect.poll(async () => (await tasks("completed=1")).map((task) => task.title).sort()).toEqual(["Pay the invoice", "Send invoice to Acme"]);
+
+	// Escape, the cross beside the title and leaving for a list all end the search, back where it began.
+	await search.press("Escape");
+	await expect(page.getByRole("heading", { name: "Errands", level: 1 })).toBeVisible();
+	await expect(search).toHaveValue("");
+	await expect(addBox).toBeVisible();
+	await search.fill("milk");
+	await expect(page.getByText("1 result", { exact: true })).toBeVisible();
+	await page.getByRole("main").getByRole("link", { name: "Clear search" }).click();
+	await expect(page.getByRole("heading", { name: "Errands", level: 1 })).toBeVisible();
+	await expect(search).toHaveValue("");
+	await expect(page).toHaveURL(new RegExp(`list=${errands.id}$`));
+	await search.fill("milk");
+	await expect(page.getByText("1 result", { exact: true })).toBeVisible();
+	await page.getByRole("navigation", { name: "Lists" }).getByRole("link", { name: /My Tasks/ }).click();
+	await expect(page.getByRole("heading", { name: "My Tasks", level: 1 })).toBeVisible();
+	await expect(search).toHaveValue("");
+
+	// Create has no box to go to among results: it opens the list used last, ready to type.
+	await search.fill("milk");
+	await expect(page.getByText("1 result", { exact: true })).toBeVisible();
+	await page.getByRole("button", { name: "Create" }).click();
+	await expect(page.getByRole("heading", { name: "My Tasks", level: 1 })).toBeVisible();
+	await expect(addBox).toBeFocused();
+
+	// Completed: what is done in every list, newest first, and the check reopens.
+	await page.getByRole("navigation", { name: "Views" }).getByRole("link", { name: "Completed" }).click();
+	await expect(page.getByRole("heading", { name: "Completed", level: 1 })).toBeVisible();
+	const completed = page.getByRole("list", { name: "Completed" });
+	await expect(completed.getByRole("listitem")).toHaveCount(2);
+	await expect(completed.getByRole("listitem").first()).toContainText("Pay the invoice");
+	await expect(row(page, sent.id).getByRole("link", { name: "Errands" })).toBeVisible();
+	await expect(addBox).toHaveCount(0);
+	await row(page, sent.id).getByRole("checkbox").click();
+	await expect(row(page, sent.id)).toHaveCount(0);
+	await expect.poll(async () => (await tasks("view=completed")).map((task) => task.title)).toEqual(["Pay the invoice"]);
+	await row(page, pay.id).getByRole("checkbox").click();
+	await expect(page.getByText("No completed tasks")).toBeVisible();
+
+	// The narrow rail keeps a search button, which opens the menu with the cursor in the box.
+	await page.getByRole("button", { name: "Collapse menu" }).click();
+	await expect(search).toHaveCount(0);
+	await page.getByRole("button", { name: "Search tasks" }).click();
+	await expect(search).toBeFocused();
+});
+
+test("the Tasks panel searches every list and shows Completed", async ({ page }) => {
+	const { tasks } = api(page);
+	const { dentist, pay, sent } = await seedInvoices(page);
+
+	await page.goto("/inbox");
+	await page.locator('[aria-controls="tasks-side-panel"]').click();
+	const panel = page.locator("#tasks-side-panel");
+	await expect(panel.getByRole("button", { name: /^List: My Tasks/ })).toBeVisible();
+	const search = panel.getByRole("textbox", { name: "Search tasks" });
+	const addBox = panel.getByRole("textbox", { name: "Add a task" });
+	const inPanel = (id: string) => panel.locator(`[data-task-row="${id}"]`);
+
+	await search.fill("invoice");
+	await expect(panel.getByText("3 results", { exact: true })).toBeVisible();
+	await expect(inPanel(dentist.id)).toBeVisible();
+	await expect(inPanel(sent.id)).toContainText("Send invoice to Acme");
+	await expect(addBox).toHaveCount(0);
+	// "Open in Tasks" carries the search along.
+	await expect(panel.getByRole("link", { name: "Open in Tasks" })).toHaveAttribute("href", "/tasks?q=invoice");
+
+	// The list chip of a result goes to that list, which ends the search.
+	await inPanel(pay.id).getByRole("button", { name: "Errands" }).click();
+	await expect(panel.getByRole("button", { name: /^List: Errands/ })).toBeVisible();
+	await expect(search).toHaveValue("");
+	await expect(addBox).toBeVisible();
+
+	// The cross empties the box and the list is back.
+	await search.fill("dentist");
+	await expect(panel.getByText("1 result", { exact: true })).toBeVisible();
+	await panel.getByRole("button", { name: "Clear search" }).click();
+	await expect(search).toHaveValue("");
+	await expect(search).toBeFocused();
+	await expect(inPanel(pay.id)).toBeVisible();
+
+	// Completed sits with the smart views in the switcher.
+	await panel.getByRole("button", { name: /^List: Errands/ }).click();
+	await page.getByRole("menuitem", { name: "Completed" }).click();
+	await expect(panel.getByRole("button", { name: /^List: Completed/ })).toBeVisible();
+	await expect(inPanel(sent.id).getByRole("button", { name: "Errands" })).toBeVisible();
+	await expect(addBox).toHaveCount(0);
+	await inPanel(sent.id).getByRole("checkbox").click();
+	await expect(panel.getByText("No completed tasks")).toBeVisible();
+	await expect.poll(async () => (await tasks("view=completed")).length).toBe(0);
+});
+
+test("on a phone the search box is in the menu drawer, and Enter shows the results", async ({ page }) => {
+	const { dentist } = await seedInvoices(page);
+	await page.setViewportSize({ width: 390, height: 844 });
+
+	await page.goto("/tasks");
+	await expect(page.getByRole("heading", { name: "My Tasks" })).toBeVisible();
+	const search = page.getByRole("textbox", { name: "Search tasks" });
+	await expect(search).not.toBeInViewport();
+	await page.getByRole("button", { name: "Open menu" }).click();
+	await expect(search).toBeInViewport();
+	await search.fill("invoice");
+	await search.press("Enter");
+	// The drawer gets out of the way of what was found.
+	await expect(search).not.toBeInViewport();
+	await expect(page.getByRole("heading", { name: 'Results for "invoice"' })).toBeVisible();
+	await expect(page.getByText("3 results", { exact: true })).toBeVisible();
+	await expect(row(page, dentist.id)).toBeInViewport();
+	expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+	// The cross beside the title needs no trip back into the drawer.
+	await page.getByRole("link", { name: "Clear search" }).click();
+	await expect(page.getByRole("heading", { name: "My Tasks" })).toBeVisible();
+
+	await page.getByRole("button", { name: "Open menu" }).click();
+	await page.getByRole("navigation", { name: "Views" }).getByRole("link", { name: "Completed" }).click();
+	await expect(page.getByRole("heading", { name: "Completed" })).toBeVisible();
+	await expect(page.getByRole("list", { name: "Completed" }).getByRole("listitem")).toHaveCount(1);
+	expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });
 
 test("on a phone the menu drawer holds the lists and the panel covers the page", async ({ page }) => {

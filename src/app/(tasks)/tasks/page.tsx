@@ -1,15 +1,16 @@
 "use client";
 
 import { Suspense, useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import toast, { Toaster } from "react-hot-toast";
-import { ListChecks, MoreVertical, Pencil, Trash2 } from "@/components/icons";
+import { ListChecks, MoreVertical, Pencil, Trash2, X } from "@/components/icons";
 import { useLanguage } from "@/components/language-provider";
 import { taskIconButtonClass, taskMenuClass, taskMenuItemClass } from "@/components/tasks/task-controls";
 import { TaskListDialog } from "@/components/tasks/task-list-dialog";
 import { TaskListView } from "@/components/tasks/task-list-view";
-import { resolveTaskScope, taskScopeHref, taskScopeKey } from "@/components/tasks/task-view-utils";
+import { resolveTaskScope, taskListViewKey, taskScopeHref, taskSearchHref } from "@/components/tasks/task-view-utils";
 import { useTaskListActions } from "@/components/tasks/use-task-actions";
 import { Button } from "@/components/ui/button";
 import { confirmDestructive } from "@/components/ui/confirm-dialog";
@@ -20,7 +21,7 @@ import { formatTaskDay, taskErrorMessage } from "@/lib/tasks/format";
 import type { TaskList } from "@/lib/tasks/types";
 import { cn } from "@/lib/utils";
 
-const VIEW_TITLES = { starred: "tasks.view.starred", today: "tasks.view.today", upcoming: "tasks.view.upcoming" } as const;
+const VIEW_TITLES = { starred: "tasks.view.starred", today: "tasks.view.today", upcoming: "tasks.view.upcoming", completed: "tasks.find.viewCompleted" } as const;
 
 /** Rename, delete completed tasks, delete: the menu beside a list's title. */
 function ListMenu({ list, onlyList, onDeleted }: { list: TaskList; onlyList: boolean; onDeleted: () => void }) {
@@ -65,9 +66,9 @@ function TasksScreen() {
 	const params = useSearchParams();
 	const { data, isPending, isError, error, refetch } = useTaskLists();
 	const lists = data?.lists ?? [];
-	const scope = resolveTaskScope({ view: params.get("view"), date: params.get("date"), list: params.get("list") }, lists.map((list) => list.id));
+	const scope = resolveTaskScope({ view: params.get("view"), date: params.get("date"), list: params.get("list"), q: params.get("q") }, lists.map((list) => list.id));
 	const list = scope?.kind === "list" ? lists.find((candidate) => candidate.id === scope.listId) ?? null : null;
-	const title = scope?.kind === "view" ? t(VIEW_TITLES[scope.view]) : scope?.kind === "date" ? formatTaskDay(scope.date) : list?.title;
+	const title = scope?.kind === "search" ? t("tasks.find.resultsFor", { query: scope.text }) : scope?.kind === "view" ? t(VIEW_TITLES[scope.view]) : scope?.kind === "date" ? formatTaskDay(scope.date) : list?.title;
 
 	// `/tasks?task=<id>` (a reminder, a link from the calendar) opens the list that holds the task and puts the cursor in it.
 	const taskId = params.get("task");
@@ -90,10 +91,12 @@ function TasksScreen() {
 			<div className="flex min-h-[4.25rem] shrink-0 items-center justify-between gap-3 border-b border-neutral-200 py-3 pl-5 pr-3">
 				{title !== undefined ? <h1 className="min-w-0 truncate text-xl font-normal text-neutral-800 max-md:text-lg">{title}</h1> : isPending ? <Skeleton className="h-7 w-40" /> : <h1 className="text-xl font-normal text-neutral-800 max-md:text-lg">{t("tasks.title")}</h1>}
 				{list && !isPendingId(list.id) && <ListMenu list={list} onlyList={lists.length <= 1} onDeleted={() => router.replace("/tasks")} />}
+				{/* Back to the list, view or day the search was started from: it is still in the address. */}
+				{scope?.kind === "search" && <Link href={taskSearchHref(params.toString(), "")} replace aria-label={t("tasks.find.clear")} title={t("tasks.find.clear")} className={cn(taskIconButtonClass, "h-10 w-10 text-neutral-600")}><X size={20} aria-hidden="true" /></Link>}
 			</div>
 			{scope ? (
 				<TaskListView
-					key={taskScopeKey(scope)}
+					key={taskListViewKey(scope)}
 					scope={scope}
 					lists={lists}
 					listensForCreate
