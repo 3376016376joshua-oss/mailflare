@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CheckCircle2, ChevronRight } from "@/components/icons";
+import { CheckCircle2, ChevronRight, Search } from "@/components/icons";
 import { useLanguage } from "@/components/language-provider";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -17,7 +17,7 @@ import { dropNeedsPendingTask, flattenTaskRows, isSameTaskSpot, keyboardTaskMove
 import type { TaskDropTarget, TaskMoveDirection } from "./task-order-utils";
 import { TaskRow } from "./task-row";
 import type { TaskRowReorder } from "./task-row";
-import { defaultDueDateForScope, groupTasksForView, listForNewTask, taskDayEntries, taskScopeKey, taskScopeQuery } from "./task-view-utils";
+import { defaultDueDateForScope, groupTasksForView, listForNewTask, scopeTakesNewTasks, taskDayEntries, taskScopeKey, taskScopeQuery } from "./task-view-utils";
 import type { TaskScope } from "./task-view-utils";
 import { useKeepFocus } from "./use-keep-focus";
 import { useSortDrag } from "./use-sort-drag";
@@ -47,6 +47,8 @@ const EMPTY_KEYS = {
 	upcoming: ["tasks.app.emptyUpcoming", "tasks.app.emptyUpcomingHint"],
 	starred: ["tasks.app.emptyStarred", "tasks.app.emptyStarredHint"],
 	date: ["tasks.app.emptyDate", "tasks.app.emptyDateHint"],
+	completed: ["tasks.find.emptyCompleted", "tasks.find.emptyCompletedHint"],
+	search: ["tasks.find.empty", "tasks.find.emptyHint"],
 } as const;
 const NO_TASKS: Task[] = [];
 const NO_OCCURRENCES: TaskOccurrence[] = [];
@@ -62,7 +64,7 @@ function useNow(): Date {
 }
 
 export type TaskListViewProps = {
-	/** One list, a smart view, or the tasks of a day. Give the component a `key` per scope (`taskScopeKey`) so its editing state starts fresh. */
+	/** One list, a smart view, the tasks of a day, or what a search finds. Give the component a `key` per scope (`taskListViewKey`) so its editing state starts fresh. */
 	scope: TaskScope;
 	lists: readonly TaskList[];
 	/** The side panel is narrower: tighter gutters, nothing else differs. */
@@ -81,8 +83,9 @@ export type TaskListViewProps = {
 
 /**
  * The tasks of one list, smart view or day: the "Add a task" box, the open tasks (in a list: draggable,
- * one level of subtasks), and the collapsed Completed section (a list and a day have one). The Tasks app
- * and the side panel both render this.
+ * one level of subtasks), and the collapsed Completed section (a list and a day have one). Search results
+ * and the Completed view are one run of tasks from every list instead, completed ones among them, each
+ * naming its list, and nothing is added there. The Tasks app and the side panel both render this.
  */
 export function TaskListView({ scope, lists, variant = "page", focusTaskId, onFocusHandled, listensForCreate, onOpenList, onOpenTask, className }: TaskListViewProps) {
 	const { t } = useLanguage();
@@ -92,7 +95,10 @@ export function TaskListView({ scope, lists, variant = "page", focusTaskId, onFo
 	const scopeKey = taskScopeKey(scope);
 	// eslint-disable-next-line react-hooks/exhaustive-deps -- a scope is fully named by its kind and key
 	const query = useMemo(() => taskScopeQuery(scope), [scope.kind, scopeKey]);
-	const { data, isPending, isError, error, refetch } = useTasks(query);
+	const isSearch = scope.kind === "search";
+	// Search results and the Completed view: one run of rows, open or completed, from every list.
+	const flat = !scopeTakesNewTasks(scope);
+	const { data, isPending, isError, error, refetch } = useTasks(query, { keepPrevious: isSearch });
 	const actions = useTaskActions();
 	const [activeId, setActiveId] = useState<string | null>(null);
 	const [subtaskParent, setSubtaskParent] = useState<string | null>(null);
@@ -114,11 +120,11 @@ export function TaskListView({ scope, lists, variant = "page", focusTaskId, onFo
 		return counts;
 	}, [tasks]);
 	const rows = useMemo(() => flattenTaskRows(tree, new Set(subtaskCounts.keys())), [tree, subtaskCounts]);
-	const sections = useMemo(() => (scope.kind === "view" ? groupTasksForView(openTasks, scope.view, today, timeZone) : []), [scope, openTasks, today, timeZone]);
+	const sections = useMemo(() => (scope.kind === "view" && scope.view !== "completed" ? groupTasksForView(openTasks, scope.view, today, timeZone) : []), [scope, openTasks, today, timeZone]);
 	// A day also lists the occurrences of repeating tasks projected onto it, as the calendar that leads here does.
 	const occurrences = (scope.kind === "date" && data?.occurrences) || NO_OCCURRENCES;
 	const dayEntries = useMemo(() => (scope.kind === "date" ? taskDayEntries(openTasks, occurrences, timeZone) : []), [scope.kind, openTasks, occurrences, timeZone]);
-	const hasCompletedSection = scope.kind !== "view";
+	const hasCompletedSection = scope.kind === "list" || scope.kind === "date";
 	const listTitles = useMemo(() => new Map(lists.map((list) => [list.id, list.title])), [lists]);
 	const rowsRef = useRef(rows);
 	useEffect(() => { rowsRef.current = rows; });
@@ -209,13 +215,14 @@ export function TaskListView({ scope, lists, variant = "page", focusTaskId, onFo
 	const gutter = variant === "panel" ? "px-1.5" : "px-2 md:px-3";
 	const loading = isPending;
 	const migrationRequired = data?.migrationRequired === true;
-	const emptyKind = loading || isError || migrationRequired || openTasks.length > 0 || dayEntries.length > 0 ? null : scope.kind === "view" ? scope.view : completedTasks.length > 0 ? "done" : scope.kind;
+	const emptyKind = loading || isError || migrationRequired || (flat ? tasks.length > 0 : openTasks.length > 0 || dayEntries.length > 0) ? null : scope.kind === "view" ? scope.view : !flat && completedTasks.length > 0 ? "done" : scope.kind;
+	const EmptyIcon = emptyKind === "search" ? Search : CheckCircle2;
 
 	return (
 		<div className={cn("flex min-h-0 flex-1 flex-col", className)}>
 			<div ref={scrollRef} className={cn("min-h-0 flex-1 overflow-y-auto overscroll-contain pb-8 pt-2", gutter)}>
 				<div className={variant === "page" ? "max-w-3xl" : undefined}>
-					{!migrationRequired && <TaskAddRow inputRef={addRef} aligned={isList} placeholder={t("tasks.action.add")} onAdd={addTask} disabled={loading || isError || lists.length === 0} />}
+					{!migrationRequired && !flat && <TaskAddRow inputRef={addRef} aligned={isList} placeholder={t("tasks.action.add")} onAdd={addTask} disabled={loading || isError || lists.length === 0} />}
 					{loading && (
 						<div aria-hidden="true" className="space-y-1 pt-1">
 							{Array.from({ length: 5 }, (_, index) => <div key={index} className="flex h-9 items-center gap-3 pl-8"><Skeleton className="h-[18px] w-[18px] shrink-0 rounded-full" /><Skeleton className="h-3.5" style={{ width: `${55 - index * 7}%` }} /></div>)}
@@ -258,9 +265,23 @@ export function TaskListView({ scope, lists, variant = "page", focusTaskId, onFo
 							))}
 						</ul>
 					)}
+					{flat && !loading && tasks.length > 0 && (
+						<>
+							{isSearch && <p role="status" className="px-3 pb-1 pt-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">{t("tasks.find.count", { count: tasks.length })}</p>}
+							<ul aria-label={isSearch ? t("tasks.find.results") : t("tasks.find.viewCompleted")}>
+								{tasks.map((task) => (
+									<li key={task.id}>
+										{task.status === "completed"
+											? <CompletedTaskRow task={task} actions={actions} subtaskCount={subtaskCounts.get(task.id) ?? 0} listTitle={listTitles.get(task.listId)} onOpenList={onOpenList} showNotes={isSearch} />
+											: <TaskRow task={task} active={activeId === task.id} listTitle={listTitles.get(task.listId)} onOpenList={onOpenList} {...rowProps} />}
+									</li>
+								))}
+							</ul>
+						</>
+					)}
 					{emptyKind && (
 						<div className="flex flex-col items-center px-6 py-12 text-center">
-							<span className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-blue-50 text-blue-600"><CheckCircle2 size={28} aria-hidden="true" /></span>
+							<span className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-blue-50 text-blue-600"><EmptyIcon size={28} aria-hidden="true" /></span>
 							<p className="text-base font-medium text-neutral-800">{t(EMPTY_KEYS[emptyKind][0])}</p>
 							<p className="mt-1 max-w-xs text-sm text-neutral-500">{t(EMPTY_KEYS[emptyKind][1])}</p>
 						</div>

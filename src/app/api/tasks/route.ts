@@ -7,8 +7,9 @@ const FLAGS: Record<string, boolean> = { "1": true, true: true, "0": false, fals
 
 /**
  * Lists the user's tasks. Filters combine with AND: `listId`, `view` (`starred`, `today`, `upcoming`:
- * open tasks across all lists), `dueFrom` / `dueTo` (inclusive dates in the viewer's zone; with both,
- * `occurrences` projects repeating tasks into the window), `messageId`, `completed` (`1` or `0`).
+ * open tasks across all lists; `completed`: completed tasks across all lists), `dueFrom` / `dueTo`
+ * (inclusive dates in the viewer's zone; with both, `occurrences` projects repeating tasks into the
+ * window), `messageId`, `completed` (`1` or `0`), `q` (text search in titles and notes).
  */
 export async function GET(request: Request) {
 	return withTaskUser(request, async ({ env, user }) => {
@@ -22,6 +23,8 @@ export async function GET(request: Request) {
 			dueTo: text("dueTo"),
 			messageId: text("messageId"),
 			completed: completed === null || completed === "" ? undefined : FLAGS[completed] ?? completed,
+			// A search box left with only spaces in it is no search.
+			q: params.get("q")?.trim() || undefined,
 		});
 		return NextResponse.json(await listTasks(env, user, query));
 	});

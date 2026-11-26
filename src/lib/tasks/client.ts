@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { authFetch } from "@/lib/auth/client";
 import { MESSAGES_CHANGED_EVENT, getMessagesChangedDetail } from "@/lib/messages/change-events";
 import { getUserTimeZone } from "@/lib/time/utils";
@@ -104,7 +104,7 @@ async function request<T>(path: string, init?: { method: string; body?: unknown 
 
 function queryString(query: TaskQuery): string {
 	const params = new URLSearchParams();
-	for (const key of ["listId", "view", "dueFrom", "dueTo", "messageId"] as const) if (query[key]) params.set(key, query[key]);
+	for (const key of ["listId", "view", "dueFrom", "dueTo", "messageId", "q"] as const) if (query[key]) params.set(key, query[key]);
 	if (query.completed !== undefined) params.set("completed", query.completed ? "1" : "0");
 	const text = params.toString();
 	return text ? `?${text}` : "";
@@ -266,12 +266,15 @@ export function useTaskLists(options: { enabled?: boolean } = {}) {
 
 /**
  * Tasks matching `query` (see `TaskQuery`): a list, a smart view, a due-date window (with projected
- * occurrences of repeating tasks) or the tasks made from an email. The response is already in display
- * order; `buildTaskTree` groups subtasks under their parents.
+ * occurrences of repeating tasks), the tasks made from an email or a text search. The response is already
+ * in display order; `buildTaskTree` groups subtasks under their parents.
+ *
+ * `keepPrevious` leaves the last answer on screen while a changed query loads: a search being typed
+ * narrows what is shown instead of flashing empty between keystrokes.
  */
-export function useTasks(query: TaskQuery, options: { enabled?: boolean } = {}) {
+export function useTasks(query: TaskQuery, options: { enabled?: boolean; keepPrevious?: boolean } = {}) {
 	useTasksSync();
-	return useQuery({ queryKey: taskKeys.query(query), queryFn: () => tasksApi.list(query), enabled: options.enabled ?? true, ...freshness });
+	return useQuery({ queryKey: taskKeys.query(query), queryFn: () => tasksApi.list(query), enabled: options.enabled ?? true, placeholderData: options.keepPrevious ? keepPreviousData : undefined, ...freshness });
 }
 
 /** One task by id, shown at once from whatever query already loaded it. */

@@ -18,14 +18,17 @@ import { cn } from "@/lib/utils";
 import { taskIconButtonClass, taskMenuClass, taskMenuItemClass } from "./task-controls";
 import { TaskListDialog } from "./task-list-dialog";
 import { TaskListView, focusTaskAddRowOnOpen } from "./task-list-view";
-import { taskScopeHref, taskScopeKey } from "./task-view-utils";
+import { TaskSearchBox } from "./task-search-box";
+import { normalizeTaskSearch, taskListViewKey, taskScopeHref } from "./task-view-utils";
 import type { TaskScope } from "./task-view-utils";
 import { useTaskListActions } from "./use-task-actions";
+import { useSettledText } from "./use-task-search";
 
 const VIEWS = [
 	{ view: "starred", labelKey: "tasks.view.starred", icon: Star },
 	{ view: "today", labelKey: "tasks.view.today", icon: CalendarDays },
 	{ view: "upcoming", labelKey: "tasks.view.upcoming", icon: CalendarClock },
+	{ view: "completed", labelKey: "tasks.find.viewCompleted", icon: CheckCircle2 },
 ] as const satisfies readonly { view: TaskView; labelKey: string; icon: unknown }[];
 
 /**
@@ -44,9 +47,9 @@ export function TasksPanelToggle({ open, onToggle }: { open: boolean; onToggle: 
 }
 
 /**
- * The Tasks side panel of Mail and Calendar: a switcher (the lists, then Starred, Today and Upcoming)
- * over the same task list as the Tasks app. It lives in the right-hand dock that also hosts the
- * Assistant, one at a time, and starts on the list the user last worked in.
+ * The Tasks side panel of Mail and Calendar: a switcher (the lists, then Starred, Today, Upcoming and
+ * Completed) and a search box over the same task list as the Tasks app. It lives in the right-hand dock
+ * that also hosts the Assistant, one at a time, and starts on the list the user last worked in.
  *
  * Mount it always: closed it renders nothing, but it still listens for `mailflare:tasks-open-panel`
  * (`openTasksPanel({ taskId?, listId?, view?, date? })`), which opens it on that list, view or day, or
@@ -56,7 +59,10 @@ export function TasksPanel({ open, onOpenChange }: { open: boolean; onOpenChange
 	const { t } = useLanguage();
 	const [listId, setListId] = useState<string | null>(() => getLastTaskListId() ?? null);
 	// A smart view or a day, shown instead of the list until the user picks a list again.
-	const [across, setAcross] = useState<Exclude<TaskScope, { kind: "list" }> | null>(null);
+	const [across, setAcross] = useState<Extract<TaskScope, { kind: "view" | "date" }> | null>(null);
+	// What is typed in the search box. While there is any, its results replace the list, view or day.
+	const [search, setSearch] = useState("");
+	const searchText = useSettledText(normalizeTaskSearch(search));
 	const [focusId, setFocusId] = useState<string | null>(null);
 	const [creating, setCreating] = useState(false);
 	const { data, isPending, isError, error, refetch } = useTaskLists({ enabled: open });
@@ -72,17 +78,22 @@ export function TasksPanel({ open, onOpenChange }: { open: boolean; onOpenChange
 	// A task asked for by id brings its own list with it.
 	const wantedListId = (focusId && focusTask.data?.listId) || listId;
 	const list = lists.find((candidate) => candidate.id === wantedListId) ?? lists[0] ?? null;
-	const scope: TaskScope | null = across && (!focusId || focusMissing) ? across : list ? { kind: "list", listId: list.id } : null;
-	const title = scope?.kind === "view" ? t(VIEWS.find((item) => item.view === scope.view)!.labelKey) : scope?.kind === "date" ? formatTaskDay(scope.date) : list?.title ?? t("tasks.title");
+	// The list, view or day the switcher names, which a search covers until it is cleared.
+	const base: Exclude<TaskScope, { kind: "search" }> | null = across && (!focusId || focusMissing) ? across : list ? { kind: "list", listId: list.id } : null;
+	const scope: TaskScope | null = base && searchText ? { kind: "search", text: searchText } : base;
+	const title = base?.kind === "view" ? t(VIEWS.find((item) => item.view === base.view)!.labelKey) : base?.kind === "date" ? formatTaskDay(base.date) : list?.title ?? t("tasks.title");
 
 	function selectList(id: string) {
 		setListId(id);
 		setAcross(null);
 		setFocusId(null);
+		setSearch("");
 		rememberLastTaskList(id);
 	}
 
 	useEffect(() => onTasksOpenPanel((detail) => {
+		// Whatever was asked for is shown, not the results of an earlier search.
+		setSearch("");
 		if (detail.taskId) {
 			setFocusId(detail.taskId);
 			setAcross(null);
@@ -108,7 +119,7 @@ export function TasksPanel({ open, onOpenChange }: { open: boolean; onOpenChange
 			<header className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-neutral-100 pl-4 pr-2">
 				<div className="flex min-w-0 items-center gap-1.5">
 					<CheckCircle2 className="h-5 w-5 shrink-0 fill-blue-400/20 text-blue-600/70" aria-hidden="true" />
-					{scope ? (
+					{base ? (
 						<DropdownMenu.Root>
 							<DropdownMenu.Trigger asChild>
 								<button type="button" aria-label={t("tasks.panel.switchList", { title })} className="flex h-9 min-w-0 items-center gap-1 rounded-full px-2 text-sm font-semibold text-neutral-900 hover:bg-neutral-100 focus-visible:outline-2 focus-visible:outline-blue-600 data-[state=open]:bg-neutral-100">
@@ -120,14 +131,14 @@ export function TasksPanel({ open, onOpenChange }: { open: boolean; onOpenChange
 								<DropdownMenu.Content align="start" sideOffset={4} collisionPadding={8} className={cn(taskMenuClass, "max-h-[min(28rem,var(--radix-dropdown-menu-content-available-height))] w-64 overflow-y-auto")}>
 									{lists.map((candidate) => (
 										<DropdownMenu.Item key={candidate.id} disabled={isPendingId(candidate.id)} className={taskMenuItemClass} onSelect={() => selectList(candidate.id)}>
-											<span className="flex h-4 w-4 shrink-0 items-center justify-center text-blue-600">{scope.kind === "list" && candidate.id === scope.listId && <Check size={16} aria-hidden="true" />}</span>
+											<span className="flex h-4 w-4 shrink-0 items-center justify-center text-blue-600">{base.kind === "list" && candidate.id === base.listId && <Check size={16} aria-hidden="true" />}</span>
 											<span className="min-w-0 flex-1 truncate">{candidate.title}</span>
 											{candidate.openCount > 0 && <span className="shrink-0 text-xs tabular-nums text-neutral-500">{candidate.openCount}</span>}
 										</DropdownMenu.Item>
 									))}
 									<DropdownMenu.Separator className="my-1 h-px bg-neutral-100" />
 									{VIEWS.map(({ view: item, labelKey, icon: Icon }) => (
-										<DropdownMenu.Item key={item} className={cn(taskMenuItemClass, scope.kind === "view" && scope.view === item && "font-medium text-blue-700")} onSelect={() => { setAcross({ kind: "view", view: item }); setFocusId(null); }}>
+										<DropdownMenu.Item key={item} className={cn(taskMenuItemClass, base.kind === "view" && base.view === item && "font-medium text-blue-700")} onSelect={() => { setAcross({ kind: "view", view: item }); setFocusId(null); setSearch(""); }}>
 											<Icon size={16} aria-hidden="true" className="shrink-0" />{t(labelKey)}
 										</DropdownMenu.Item>
 									))}
@@ -143,16 +154,17 @@ export function TasksPanel({ open, onOpenChange }: { open: boolean; onOpenChange
 					<button type="button" onClick={() => onOpenChange(false)} aria-label={t("tasks.panel.close")} className={cn(taskIconButtonClass, "h-9 w-9 text-neutral-600")}><X size={18} aria-hidden="true" /></button>
 				</div>
 			</header>
+			{base && <div className="shrink-0 px-3 pt-3"><TaskSearchBox value={search} onChange={setSearch} /></div>}
 			{scope ? (
 				<TaskListView
-					key={taskScopeKey(scope)}
+					key={taskListViewKey(scope)}
 					scope={scope}
 					lists={lists}
 					variant="panel"
 					focusTaskId={focusMissing ? null : focusId}
 					onFocusHandled={() => { if (focusTask.data) selectList(focusTask.data.listId); else setFocusId(null); }}
 					onOpenList={selectList}
-					onOpenTask={(taskId) => { setFocusId(taskId); setAcross(null); }}
+					onOpenTask={(taskId) => { setFocusId(taskId); setAcross(null); setSearch(""); }}
 				/>
 			) : isPending ? (
 				<div aria-hidden="true" className="space-y-3 p-5">{Array.from({ length: 4 }, (_, index) => <Skeleton key={index} className="h-4" style={{ width: `${80 - index * 12}%` }} />)}</div>

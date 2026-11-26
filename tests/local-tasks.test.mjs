@@ -203,6 +203,32 @@ test("tasks group into one level of subtasks and sort by due date", () => {
 	assert.deepEqual([late, ...due].sort((a, b) => utils.compareTasksByDue(a, b, "Europe/Berlin")).map((task) => task.id), [5, 4, 3, 6, 2, 1]);
 });
 
+test("a search matches every word in the title or the notes, whatever the case", () => {
+	assert.deepEqual(utils.taskSearchTerms("  Call   the\tdentist "), ["Call", "the", "dentist"]);
+	assert.deepEqual(utils.taskSearchTerms(null), []);
+	assert.equal(utils.taskSearchTerms("a b c d e f g h i j").length, 8, "a long text is cut to its first words");
+	const task = { title: "Call the Dentist", notes: "Ask about the invoice" };
+	for (const text of ["dentist", "DENT", "call invoice", "the", "", "   "]) assert.equal(utils.taskMatchesSearch(task, text), true, text);
+	for (const text of ["doctor", "call doctor", "dentistry"]) assert.equal(utils.taskMatchesSearch(task, text), false, text);
+
+	const row = (id, fields = {}) => ({ id, listId: "tl_1", parentId: null, title: id, notes: "", status: "needs-action", completedAt: null, dueDate: null, dueAt: null, starred: false, starredAt: null, position: "i0", message: null, createdAt: "2026-11-01T00:00:00.000Z", ...fields });
+	const rows = [
+		row("old undated"), row("new undated", { createdAt: "2026-11-20T00:00:00.000Z" }), row("due later", { dueDate: "2026-12-01" }), row("due sooner", { dueDate: "2026-11-25" }),
+		row("done first", { status: "completed", completedAt: "2026-11-10T00:00:00.000Z" }), row("done last", { status: "completed", completedAt: "2026-11-22T00:00:00.000Z", dueDate: "2026-11-01" }),
+	];
+	// Across lists there is no manual order: dated tasks by date, then the newest, then the completed ones.
+	assert.deepEqual(utils.sortTasksForQuery(rows, { q: "x" }, "UTC").map((task) => task.id), ["due sooner", "due later", "new undated", "old undated", "done last", "done first"]);
+	assert.deepEqual(utils.sortTasksForQuery(rows.slice(4), { view: "completed" }, "UTC").map((task) => task.id), ["done last", "done first"]);
+
+	const matches = (task, query) => utils.taskMatchesQuery(task, query, "2026-11-24", "UTC");
+	assert.equal(matches(rows[4], { view: "completed" }), true);
+	assert.equal(matches(rows[0], { view: "completed" }), false);
+	assert.equal(matches(rows[4], { view: "starred" }), false);
+	assert.equal(matches(rows[0], { q: "OLD" }), true);
+	assert.equal(matches(rows[0], { q: "old due" }), false);
+	assert.equal(matches(rows[4], { q: "done", completed: false }), false);
+});
+
 test("input schemas trim, default and reject", () => {
 	assert.deepEqual(schemas.createTaskSchema.parse({ title: "  Call Maya  " }), { title: "Call Maya" });
 	assert.equal(schemas.createTaskSchema.parse({ title: "x", repeat: { freq: "weekly" } }).repeat.interval, 1);
@@ -213,6 +239,8 @@ test("input schemas trim, default and reject", () => {
 		{ title: "x", repeat: { freq: "daily", until: "2026-12-01", count: 3 } },
 	]) assert.equal(schemas.createTaskSchema.safeParse(bad).success, false, JSON.stringify(bad).slice(0, 80));
 	assert.equal(schemas.taskQuerySchema.safeParse({ view: "someday" }).success, false);
+	assert.deepEqual(schemas.taskQuerySchema.parse({ view: "completed", q: "  milk  " }), { view: "completed", q: "milk" });
+	for (const bad of [{ q: "   " }, { q: "x".repeat(201) }]) assert.equal(schemas.taskQuerySchema.safeParse(bad).success, false, JSON.stringify(bad).slice(0, 40));
 	assert.match(schemas.firstIssue(schemas.createTaskSchema.safeParse({ title: "" }).error), /^title: /);
 });
 
@@ -607,6 +635,60 @@ test("smart views: Today holds overdue and today's tasks, Upcoming the later one
 	assert.deepEqual(await titles({ view: "today" }, tokyo), ["overdue", "today", "sub due today", "tomorrow", "tonight"]);
 	assert.deepEqual(await titles({ view: "upcoming" }, tokyo), ["later"]);
 	assert.deepEqual(await titles({ view: "today", listId: "tl_other" }), []);
+});
+
+test("a search finds tasks in every list by title or notes, open and completed, and never someone else's", async (t) => {
+	const { env, add, titles } = await createFixture(t);
+	const work = await service.createTaskList(env, kevin, { title: "Work" });
+	await add({ title: "Buy milk" });
+	await add({ title: "Call the dentist", notes: "Ask about the INVOICE for March" });
+	const parent = await add({ title: "Plan offsite", listId: work.id, due: { date: "2026-12-01" } });
+	await add({ title: "Collect invoices", parentId: parent.id }, kevin, new Date(NOW.getTime() + 60_000));
+	await add({ title: "Pay invoice 100%_!", listId: work.id, due: { date: "2026-11-25" } });
+	const sent = await add({ title: "Send Invoice to Acme", listId: work.id });
+	await service.updateTask(env, kevin, sent.id, { completed: true }, NOW);
+	await add({ title: "Anna's invoice" }, anna);
+
+	// Dated tasks first, then the newest; completed ones last. Case does not matter.
+	assert.deepEqual(await titles({ q: "invoice" }), ["Pay invoice 100%_!", "Collect invoices", "Call the dentist", "Send Invoice to Acme"]);
+	assert.deepEqual(await titles({ q: "INVOICE" }), await titles({ q: "invoice" }));
+	assert.deepEqual(await titles({ q: "invoice", completed: false }), ["Pay invoice 100%_!", "Collect invoices", "Call the dentist"]);
+	assert.deepEqual(await titles({ q: "invoice", completed: true }), ["Send Invoice to Acme"]);
+	assert.deepEqual(await titles({ q: "invoice", view: "completed" }), ["Send Invoice to Acme"]);
+	assert.deepEqual(await titles({ q: "invoice", listId: work.id, completed: false }), ["Pay invoice 100%_!", "Collect invoices"]);
+	assert.deepEqual(await titles({ q: "invoice", view: "upcoming" }), ["Pay invoice 100%_!"]);
+	// Every word has to be there, in the title or in the notes.
+	assert.deepEqual(await titles({ q: "march dentist" }), ["Call the dentist"]);
+	assert.deepEqual(await titles({ q: "dentist milk" }), []);
+	// LIKE wildcards in the text are plain characters.
+	assert.deepEqual(await titles({ q: "100%_!" }), ["Pay invoice 100%_!"]);
+	assert.deepEqual(await titles({ q: "%" }), ["Pay invoice 100%_!"]);
+	assert.deepEqual(await titles({ q: "_" }), ["Pay invoice 100%_!"]);
+	assert.deepEqual(await titles({ q: "nothing like it" }), []);
+	assert.deepEqual(await titles({ q: "invoice" }, { now: NOW }, anna), ["Anna's invoice"]);
+	// A window asked for with a search projects only the repeating tasks that match.
+	await add({ title: "Weekly invoice run", due: { date: "2026-11-25" }, repeat: { freq: "weekly" } });
+	await add({ title: "Weekly standup", due: { date: "2026-11-25" }, repeat: { freq: "weekly" } });
+	const window = await service.listTasks(env, kevin, { q: "invoice", dueFrom: "2026-11-25", dueTo: "2026-12-05" }, { now: NOW });
+	assert.deepEqual([...new Set(window.occurrences.map((occurrence) => occurrence.title))], ["Weekly invoice run"]);
+});
+
+test("the Completed view lists completed tasks of every list, most recently completed first", async (t) => {
+	const { env, add, titles } = await createFixture(t);
+	const work = await service.createTaskList(env, kevin, { title: "Work" });
+	const [a, b, c] = [await add({ title: "A" }), await add({ title: "B", listId: work.id, due: { date: "2026-11-20" } }), await add({ title: "C", starred: true })];
+	await add({ title: "Still open" });
+	await service.updateTask(env, kevin, b.id, { completed: true }, new Date(NOW.getTime() + 1000));
+	await service.updateTask(env, kevin, a.id, { completed: true }, new Date(NOW.getTime() + 2000));
+	await service.updateTask(env, kevin, c.id, { completed: true }, new Date(NOW.getTime() + 3000));
+	const theirs = await add({ title: "Anna's" }, anna);
+	await service.updateTask(env, anna, theirs.id, { completed: true }, NOW);
+
+	assert.deepEqual(await titles({ view: "completed" }), ["C", "A", "B"]);
+	assert.deepEqual(await titles({ view: "completed", listId: work.id }), ["B"]);
+	assert.deepEqual(await titles({ view: "completed", completed: false }), [], "filters combine with AND");
+	await service.updateTask(env, kevin, a.id, { completed: false }, NOW);
+	assert.deepEqual(await titles({ view: "completed" }), ["C", "B"]);
 });
 
 test("a due range returns the tasks in it and projects repeating tasks into it", async (t) => {

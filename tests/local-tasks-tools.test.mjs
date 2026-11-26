@@ -144,6 +144,18 @@ test("list_tasks filters by list, view, due range and status, and get_task retur
 	assert.deepEqual(await titles({ dueFrom: day(0), dueTo: day(7) }), ["Later", "Today"]);
 	assert.deepEqual(await titles({ dueTo: day(-1) }), ["Overdue"]);
 	await assert.rejects(run("list_tasks", { view: "today", status: "completed" }), /open tasks only/);
+	// The completed view answers completed tasks without being told the status, which defaults to open.
+	assert.deepEqual(await titles({ view: "completed" }), ["Done"]);
+	assert.deepEqual(await titles({ view: "completed", status: "all" }), ["Done"]);
+	assert.deepEqual(await titles({ view: "completed", listId: work.id }), []);
+	// A search text looks in titles and notes; like every listing it is open tasks unless asked otherwise.
+	await run("update_tasks", { updates: [{ taskId: later.id, notes: "Remember the DONE list" }] });
+	assert.deepEqual(await titles({ query: "done" }), ["Later"]);
+	assert.deepEqual(await titles({ query: "done", status: "all" }), ["Done", "Later"]);
+	assert.deepEqual(await titles({ query: "  done   list " }), ["Later"]);
+	assert.deepEqual(await titles({ query: "done", listId: work.id, view: "upcoming" }), ["Later"]);
+	assert.deepEqual(await titles({ query: "nowhere" }), []);
+	await assert.rejects(run("list_tasks", { query: "   " }), /query/);
 	await assert.rejects(run("list_tasks", { listId: "tl_missing" }), /List not found/);
 	await assert.rejects(run("list_tasks", { dueFrom: "tomorrow" }), /dueFrom/);
 

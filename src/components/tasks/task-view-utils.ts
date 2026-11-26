@@ -1,4 +1,4 @@
-import { MAX_REPEAT_COUNT, MAX_REPEAT_INTERVAL, addDays, compareTasksByDue, isDateString, isTimeString, taskLocalDate, timeInZone } from "@/lib/tasks/task-utils";
+import { MAX_REPEAT_COUNT, MAX_REPEAT_INTERVAL, TASK_SEARCH_MAX, TASK_VIEWS, addDays, compareTasksByDue, isDateString, isTimeString, taskLocalDate, timeInZone } from "@/lib/tasks/task-utils";
 import type { Task, TaskOccurrence, TaskQuery, TaskRepeatFreq, TaskRepeatInput, TaskView, UpdateTaskInput } from "@/lib/tasks/types";
 
 /**
@@ -10,44 +10,83 @@ import type { Task, TaskOccurrence, TaskQuery, TaskRepeatFreq, TaskRepeatInput, 
 // ---- What is on screen ----
 
 /**
- * One list, a smart view across all lists, or the tasks due on one day ("YYYY-MM-DD" in the viewer's
- * zone) across all lists: what a crowded "N tasks" chip of the calendar opens.
+ * One list, a smart view across all lists, the tasks due on one day ("YYYY-MM-DD" in the viewer's
+ * zone) across all lists (what a crowded "N tasks" chip of the calendar opens), or the tasks a search
+ * text finds across all lists.
  */
-export type TaskScope = { kind: "list"; listId: string } | { kind: "view"; view: TaskView } | { kind: "date"; date: string };
-
-const VIEWS: readonly TaskView[] = ["starred", "today", "upcoming"];
+export type TaskScope = { kind: "list"; listId: string } | { kind: "view"; view: TaskView } | { kind: "date"; date: string } | { kind: "search"; text: string };
 
 export function parseTaskView(value: string | null | undefined): TaskView | null {
-	return VIEWS.includes(value as TaskView) ? (value as TaskView) : null;
+	return TASK_VIEWS.includes(value as TaskView) ? (value as TaskView) : null;
 }
 
-/** Names a scope among the others, for a React `key` or an effect that must run once per scope. */
+/** A search text as the API takes it: words one space apart, no longer than it accepts. "" means no search. */
+export function normalizeTaskSearch(value: string | null | undefined): string {
+	return (value ?? "").trim().replace(/\s+/g, " ").slice(0, TASK_SEARCH_MAX).trim();
+}
+
+/** Names a scope among the others, for an effect that must run once per scope. */
 export function taskScopeKey(scope: TaskScope): string {
+	if (scope.kind === "search") return `search:${scope.text}`;
 	return scope.kind === "list" ? scope.listId : scope.kind === "view" ? scope.view : scope.date;
+}
+
+/**
+ * The React `key` of the task list showing a scope, so its editing state starts fresh per list, view or
+ * day. Every search shares one: refining the text keeps the results on screen instead of starting over.
+ */
+export function taskListViewKey(scope: TaskScope): string {
+	return scope.kind === "search" ? "search" : taskScopeKey(scope);
 }
 
 export function taskScopeQuery(scope: TaskScope): TaskQuery {
 	if (scope.kind === "list") return { listId: scope.listId };
+	if (scope.kind === "search") return { q: scope.text };
 	return scope.kind === "view" ? { view: scope.view } : { dueFrom: scope.date, dueTo: scope.date };
 }
 
-/** The address of a list, view or day in the Tasks app, optionally with a task to bring into focus. */
+/**
+ * Whether tasks are added in a scope. Search results and the Completed view only show what exists: a
+ * task typed there would not appear in them.
+ */
+export function scopeTakesNewTasks(scope: TaskScope): boolean {
+	return scope.kind !== "search" && !(scope.kind === "view" && scope.view === "completed");
+}
+
+/** The address of a list, view, day or search in the Tasks app, optionally with a task to bring into focus. */
 export function taskScopeHref(scope: TaskScope | null, taskId?: string | null): string {
 	const params = new URLSearchParams();
 	if (scope?.kind === "list") params.set("list", scope.listId);
 	if (scope?.kind === "view") params.set("view", scope.view);
 	if (scope?.kind === "date") params.set("date", scope.date);
+	if (scope?.kind === "search") params.set("q", scope.text);
 	if (taskId) params.set("task", taskId);
 	const query = params.toString();
 	return query ? `/tasks?${query}` : "/tasks";
 }
 
 /**
- * What `/tasks?view=...&date=...&list=...` shows: the named view, else the named day, else the named
- * list when it exists, else the first list. null while there is no list to show (still loading, or
- * Tasks is not set up).
+ * The address that searches for `text` from the page at `search` (its query string). The list, view or
+ * day stays in the address underneath, so clearing the search (`text` "") returns to it.
  */
-export function resolveTaskScope(params: { view: string | null; date?: string | null; list: string | null }, listIds: readonly string[]): TaskScope | null {
+export function taskSearchHref(search: string, text: string): string {
+	const params = new URLSearchParams(search);
+	params.delete("task");
+	const wanted = normalizeTaskSearch(text);
+	if (wanted) params.set("q", wanted);
+	else params.delete("q");
+	const query = params.toString();
+	return query ? `/tasks?${query}` : "/tasks";
+}
+
+/**
+ * What `/tasks?q=...&view=...&date=...&list=...` shows: the search when there is one, else the named
+ * view, else the named day, else the named list when it exists, else the first list. null while there
+ * is no list to show (still loading, or Tasks is not set up).
+ */
+export function resolveTaskScope(params: { view: string | null; date?: string | null; list: string | null; q?: string | null }, listIds: readonly string[]): TaskScope | null {
+	const text = normalizeTaskSearch(params.q);
+	if (text) return { kind: "search", text };
 	const view = parseTaskView(params.view);
 	if (view) return { kind: "view", view };
 	if (isDateString(params.date)) return { kind: "date", date: params.date };
@@ -76,10 +115,10 @@ export function listForNewTask(listIds: readonly string[], lastListId: string | 
 export type TaskSection = { key: string; kind: "overdue" | "date" | "all"; date: string | null; tasks: Task[] };
 
 /**
- * A smart view cut into sections: Today is "Overdue" then today's tasks, Upcoming is one section per
- * date, Starred is a single run. The order inside a section is the order the API answered in.
+ * A smart view of open tasks cut into sections: Today is "Overdue" then today's tasks, Upcoming is one
+ * section per date, Starred is a single run. The order inside a section is the order the API answered in.
  */
-export function groupTasksForView(tasks: readonly Task[], view: TaskView, today: string, timeZone: string): TaskSection[] {
+export function groupTasksForView(tasks: readonly Task[], view: Exclude<TaskView, "completed">, today: string, timeZone: string): TaskSection[] {
 	if (view === "starred") return tasks.length ? [{ key: "all", kind: "all", date: null, tasks: [...tasks] }] : [];
 	const sections = new Map<string, TaskSection>();
 	for (const task of tasks) {

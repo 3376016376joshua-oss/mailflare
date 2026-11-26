@@ -2,6 +2,7 @@ import { and, asc, count, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, lte
 import { getDb } from "@/db";
 import type { AppDatabase } from "@/db";
 import { messages, taskLists, tasks } from "@/db/schema";
+import { containsLike } from "@/db/sql";
 import type { SessionUser } from "@/lib/auth/types";
 import { isMissingTableError } from "@/lib/database-errors";
 import { selectInBatches } from "@/lib/db-params";
@@ -12,7 +13,7 @@ import { normalizeTimeZone } from "@/lib/time/utils";
 import { TASK_TITLE_MAX } from "./schemas";
 import {
 	addDays, compareRanks, compareTasksByDue, dateInZone, deriveDue, dueInputOf, expandRepeatOccurrences, nextRepeatOccurrence,
-	rankBetween, repeatAnchorDay, sortTasksForQuery, startOfDayInZone, timeInZone, zonedInstant,
+	rankBetween, repeatAnchorDay, sortTasksForQuery, startOfDayInZone, taskSearchTerms, timeInZone, zonedInstant,
 } from "./task-utils";
 import type {
 	CreateTaskInput, CreateTaskListInput, MoveTaskInput, Task, TaskErrorCode, TaskList, TaskListsResponse, TaskMutationResponse,
@@ -263,6 +264,14 @@ function dueOnOrAfter(date: string, timeZone: string): SQL {
 	return or(and(isNull(tasks.dueAt), gte(tasks.dueDate, date)), gte(tasks.dueAt, startOfDayInZone(date, timeZone)))!;
 }
 
+/**
+ * One predicate per word of a search text: the title or the notes contain it, whatever the case. A
+ * substring `LIKE` needs no index here: it only ever scans one user's tasks.
+ */
+function matchesSearch(text: string | undefined): SQL[] {
+	return taskSearchTerms(text).map((term) => or(containsLike(tasks.title, term), containsLike(tasks.notes, term))!);
+}
+
 /** Projected occurrences of the user's open repeating tasks that fall on `from`..`to` for a viewer in `timeZone`. */
 async function projectOccurrences(db: AppDatabase, userId: string, query: TaskQuery, from: string, to: string, timeZone: string): Promise<TaskOccurrence[]> {
 	const rows = await db
@@ -276,6 +285,7 @@ async function projectOccurrences(db: AppDatabase, userId: string, query: TaskQu
 			lte(tasks.dueDate, addDays(to, 1)),
 			...(query.listId ? [eq(tasks.listId, query.listId)] : []),
 			...(query.messageId ? [eq(tasks.messageId, query.messageId)] : []),
+			...matchesSearch(query.q),
 		))
 		.limit(MAX_TASKS_PER_RESPONSE);
 	const occurrences: TaskOccurrence[] = [];
@@ -315,7 +325,8 @@ export async function listTasks(env: CloudflareEnv, user: TaskUser, query: TaskQ
 		if (query.listId) conditions.push(eq(tasks.listId, query.listId));
 		if (query.messageId) conditions.push(eq(tasks.messageId, query.messageId));
 		if (query.completed !== undefined) conditions.push(eq(tasks.status, query.completed ? DONE : OPEN));
-		if (query.view) conditions.push(eq(tasks.status, OPEN));
+		if (query.view) conditions.push(eq(tasks.status, query.view === "completed" ? DONE : OPEN));
+		conditions.push(...matchesSearch(query.q));
 		if (query.view === "starred") conditions.push(isNotNull(tasks.starredAt));
 		if (query.view === "today") conditions.push(dueOnOrBefore(today, timeZone));
 		if (query.view === "upcoming") conditions.push(dueOnOrAfter(addDays(today, 1), timeZone));

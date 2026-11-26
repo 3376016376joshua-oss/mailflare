@@ -76,8 +76,8 @@ export type TaskOccurrence = {
 	repeatIndex: number;
 };
 
-/** Smart views across all lists; each returns open tasks only. */
-export type TaskView = "starred" | "today" | "upcoming";
+/** Smart views across all lists. `completed` returns completed tasks, the others open tasks only. */
+export type TaskView = "starred" | "today" | "upcoming" | "completed";
 
 /** Filters of `GET /api/tasks`; they combine with AND. */
 export type TaskQuery = {
@@ -90,6 +90,8 @@ export type TaskQuery = {
 	messageId?: string;
 	/** true = completed only, false = open only, omitted = both. */
 	completed?: boolean;
+	/** Text search: tasks whose title or notes contain every word, whatever the case. */
+	q?: string;
 };
 
 export type TasksResponse = {

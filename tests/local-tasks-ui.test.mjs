@@ -183,6 +183,36 @@ test("the URL names a view, a day, a list, or falls back to the first list", () 
 	assert.deepEqual([{ kind: "list", listId: "l1" }, { kind: "view", view: "today" }, { kind: "date", date: "2026-11-24" }].map(view.taskScopeKey), ["l1", "today", "2026-11-24"]);
 });
 
+test("a search is part of the address and covers the list, view or day under it", () => {
+	const ids = ["l1", "l2"];
+	assert.deepEqual(view.resolveTaskScope({ view: "today", list: "l2", q: "  call   Maya " }, ids), { kind: "search", text: "call Maya" });
+	assert.deepEqual(view.resolveTaskScope({ view: null, list: null, q: "milk" }, []), { kind: "search", text: "milk" }, "a search needs no list");
+	assert.deepEqual(view.resolveTaskScope({ view: "today", list: "l2", q: "   " }, ids), { kind: "view", view: "today" }, "only spaces: no search");
+	assert.deepEqual(view.resolveTaskScope({ view: "completed", list: null }, ids), { kind: "view", view: "completed" });
+	assert.equal(view.normalizeTaskSearch(`  ${"x".repeat(250)}`).length, 200);
+	assert.equal(view.normalizeTaskSearch(null), "");
+
+	assert.equal(view.taskScopeHref({ kind: "search", text: "call Maya" }), "/tasks?q=call+Maya");
+	assert.deepEqual(view.taskScopeQuery({ kind: "search", text: "call Maya" }), { q: "call Maya" });
+	assert.deepEqual(view.taskScopeQuery({ kind: "view", view: "completed" }), { view: "completed" });
+	// Searching keeps where the user was, and clearing the search goes back there. A task to focus is not carried along.
+	assert.equal(view.taskSearchHref("list=l2", " milk "), "/tasks?list=l2&q=milk");
+	assert.equal(view.taskSearchHref("view=today&q=mil&task=tsk_1", "milk"), "/tasks?view=today&q=milk");
+	assert.equal(view.taskSearchHref("list=l2&q=milk", ""), "/tasks?list=l2");
+	assert.equal(view.taskSearchHref("q=milk", "  "), "/tasks");
+
+	// Each search is its own scope, but the list on screen is kept while the text is refined.
+	const [milk, bread] = [{ kind: "search", text: "milk" }, { kind: "search", text: "bread" }];
+	assert.notEqual(view.taskScopeKey(milk), view.taskScopeKey(bread));
+	assert.equal(view.taskListViewKey(milk), view.taskListViewKey(bread));
+	assert.notEqual(view.taskListViewKey({ kind: "list", listId: "l1" }), view.taskListViewKey({ kind: "list", listId: "l2" }));
+
+	// Nothing is added among search results or completed tasks: it would not show there.
+	assert.deepEqual([milk, { kind: "view", view: "completed" }, { kind: "view", view: "today" }, { kind: "list", listId: "l1" }, { kind: "date", date: "2026-11-24" }].map(view.scopeTakesNewTasks), [false, false, true, true, true]);
+	assert.equal(view.defaultDueDateForScope(milk, "2026-11-24"), null);
+	assert.equal(view.defaultDueDateForScope({ kind: "view", view: "completed" }, "2026-11-24"), null);
+});
+
 test("a task added from a smart view or a day starts with a date that keeps it there", () => {
 	assert.equal(view.defaultDueDateForScope({ kind: "view", view: "today" }, "2026-11-24"), "2026-11-24");
 	assert.equal(view.defaultDueDateForScope({ kind: "view", view: "upcoming" }, "2026-11-30"), "2026-12-01");
@@ -284,11 +314,11 @@ test("a repeating task keeps its series unless the rule itself is edited", () =>
 test("every string the Tasks screens ask for exists", () => {
 	const strings = { ...JSON.parse(readFileSync(join(root, "src/lib/i18n/en.json"), "utf8")) };
 	const known = (key) => key in strings || `${key}.other` in strings;
-	const sources = ["src/components/tasks/task-row.tsx", "src/components/tasks/task-list-view.tsx", "src/components/tasks/task-list-rows.tsx", "src/components/tasks/task-list-dialog.tsx", "src/components/tasks/task-schedule-dialog.tsx", "src/components/tasks/task-controls.tsx", "src/components/tasks/tasks-panel.tsx", "src/app/(tasks)/tasks-nav.tsx", "src/app/(tasks)/tasks/page.tsx", "src/app/(tasks)/layout.tsx"];
+	const sources = ["src/components/tasks/task-row.tsx", "src/components/tasks/task-list-view.tsx", "src/components/tasks/task-list-rows.tsx", "src/components/tasks/task-list-dialog.tsx", "src/components/tasks/task-schedule-dialog.tsx", "src/components/tasks/task-controls.tsx", "src/components/tasks/task-search-box.tsx", "src/components/tasks/tasks-panel.tsx", "src/app/(tasks)/tasks-nav.tsx", "src/app/(tasks)/tasks/page.tsx", "src/app/(tasks)/layout.tsx"];
 	const used = new Set(sources.flatMap((file) => [...readFileSync(join(root, file), "utf8").matchAll(/"(tasks\.[A-Za-z0-9.]+)"/g)].map((match) => match[1])));
 	assert.ok(used.size > 60, "the scan found the keys");
 	assert.deepEqual([...used].filter((key) => !known(key)), []);
-	const fragments = { ...JSON.parse(readFileSync(join(root, "src/lib/i18n/local/tasks-app.json"), "utf8")), ...JSON.parse(readFileSync(join(root, "src/lib/i18n/local/tasks-panel.json"), "utf8")) };
+	const fragments = Object.assign({}, ...["tasks-app", "tasks-panel", "tasks-find"].map((name) => JSON.parse(readFileSync(join(root, `src/lib/i18n/local/${name}.json`), "utf8"))));
 	const unused = Object.keys(fragments).filter((key) => !used.has(key) && !used.has(key.replace(/\.(one|other)$/, "")));
 	assert.deepEqual(unused, [], "strings nothing asks for");
 });

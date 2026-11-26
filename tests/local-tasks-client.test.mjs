@@ -104,6 +104,28 @@ test("a changed task shows where it now belongs and leaves where it no longer do
 	assert.deepEqual(titles(cache.upsertTaskInResponse(response([]), { messageId: "m1" }, { ...nextWeek, message: { id: "m1", subject: "s" } }, CLOCK)), ["A"]);
 });
 
+test("search results and the Completed view follow a change like every other query", () => {
+	const milk = task({ title: "Buy milk", createdAt: "2026-11-20T00:00:00.000Z" });
+	const oat = task({ title: "Oat MILK for Maya", dueDate: "2026-11-30" });
+	const bread = task({ title: "Buy bread", notes: "and milk if they have it" });
+	const results = response([oat, milk]);
+
+	// A task edited into the search appears among its results, in their order; one edited out of it leaves.
+	assert.deepEqual(titles(cache.upsertTaskInResponse(results, { q: "milk" }, bread, CLOCK)), ["Oat MILK for Maya", "Buy bread", "Buy milk"]);
+	assert.deepEqual(titles(cache.upsertTaskInResponse(results, { q: "milk" }, cache.applyTaskUpdate(milk, { title: "Buy tea" }, CLOCK), CLOCK)), ["Oat MILK for Maya"]);
+	assert.deepEqual(titles(cache.upsertTaskInResponse(results, { q: "milk maya" }, cache.applyTaskUpdate(milk, { notes: "Maya asked" }, CLOCK), CLOCK)), ["Oat MILK for Maya", "Buy milk"]);
+	// A completed result stays a result, after the open ones.
+	const done = cache.applyTaskUpdate(oat, { completed: true }, CLOCK);
+	assert.deepEqual(cache.upsertTaskInResponse(results, { q: "milk" }, done, CLOCK).tasks.map((item) => [item.title, item.status]), [["Buy milk", "needs-action"], ["Oat MILK for Maya", "completed"]]);
+
+	// Completing a task puts it at the top of Completed; reopening takes it out.
+	const earlier = task({ title: "Earlier", status: "completed", completedAt: "2026-11-01T00:00:00.000Z" });
+	const completedView = cache.upsertTaskInResponse(response([earlier]), { view: "completed" }, done, CLOCK);
+	assert.deepEqual(titles(completedView), ["Oat MILK for Maya", "Earlier"]);
+	assert.deepEqual(titles(cache.upsertTaskInResponse(completedView, { view: "completed" }, cache.applyTaskUpdate(earlier, { completed: false }, CLOCK), CLOCK)), ["Oat MILK for Maya"]);
+	assert.deepEqual(titles(cache.upsertTaskInResponse(response([]), { view: "completed" }, milk, CLOCK)), []);
+});
+
 test("projected occurrences go with the task they belong to", () => {
 	const repeating = task({ title: "Standup", dueDate: "2026-11-24", repeat: { freq: "daily", interval: 1, until: null, count: null, index: 0 } });
 	const other = task({ title: "Other", dueDate: "2026-11-25" });

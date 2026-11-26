@@ -1,7 +1,7 @@
 /**
  * Exercises the local Tasks service (src/lib/tasks/service.ts) against any DATABASE_URL, the way
  * scripts/db-smoke.ts does for the rest of the app: the 9000_local_tasks migration, the default list,
- * ranks, subtasks, the repeat cycle, the smart views, the calendar window and the reminder claim.
+ * ranks, subtasks, the repeat cycle, the smart views, the text search, the calendar window and the reminder claim.
  *
  *   MAILFLARE_DB_DIALECT=postgres node scripts/run-ts.mjs scripts/local-tasks-smoke.ts pglite://memory
  *   MAILFLARE_DB_DIALECT=mysql node scripts/run-ts.mjs scripts/local-tasks-smoke.ts mysql://user:pass@host/db
@@ -76,6 +76,12 @@ await createTask(env, user, { title: "Later", listId, due: { date: "2026-12-20" 
 check("today view", same(await titles({ view: "today" }), ["Overdue", "Weekly"]));
 check("upcoming view", same(await titles({ view: "upcoming" }), ["Later"]));
 check("starred view", same(await titles({ view: "starred" }), ["Weekly"]));
+
+const paid = (await createTask(env, user, { title: "Pay the INVOICE 100%_!", notes: "Ask Maya for the receipt", listId }, now)).task;
+check("search ignores case and takes LIKE wildcards literally", same(await titles({ q: "invoice" }), [paid.title]) && same(await titles({ q: "100%_!" }), [paid.title]) && same(await titles({ q: "%" }), [paid.title]) && same(await titles({ q: "_" }), [paid.title]));
+check("search looks in notes and needs every word", same(await titles({ q: "maya invoice" }), [paid.title]) && same(await titles({ q: "maya weekly" }), []));
+await updateTask(env, user, paid.id, { completed: true }, now);
+check("completed view", same(await titles({ view: "completed" }), [paid.title]) && same(await titles({ q: "invoice", completed: false }), []) && same(await titles({ q: "invoice", view: "completed" }), [paid.title]));
 const window = await listTasks(env, user, { dueFrom: "2026-11-30", dueTo: "2026-12-31" }, { now });
 check("calendar window projects repeating tasks", same(window.tasks.map((task) => task.title), ["Later"]) && same(window.occurrences.map((item) => item.dueDate), ["2026-12-01", "2026-12-08"]));
 
