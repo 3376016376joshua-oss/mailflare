@@ -9,7 +9,7 @@ import { isOthersDraft } from "@/lib/email/draft-access";
 import { newId } from "@/lib/ids";
 import { getMailboxAccessLevel, listAccessibleMailboxIds } from "@/lib/mailboxes/access";
 import { normalizeTimeZone } from "@/lib/time/utils";
-import { TASK_TITLE_MAX } from "./schemas";
+import { TASK_LIST_TITLE_MAX, TASK_TITLE_MAX } from "./schemas";
 import {
 	addDays, compareRanks, compareTasksByDue, dateInZone, deriveDue, dueInputOf, expandRepeatOccurrences, nextRepeatOccurrence,
 	rankBetween, repeatAnchorDay, sortTasksForQuery, startOfDayInZone, timeInZone, zonedInstant,
@@ -237,6 +237,38 @@ export async function deleteTaskList(env: CloudflareEnv, user: TaskUser, id: str
 			db.delete(tasks).where(and(eq(tasks.listId, id), eq(tasks.userId, user.id))),
 			db.delete(taskLists).where(and(eq(taskLists.id, id), eq(taskLists.userId, user.id))),
 		]);
+	});
+}
+
+/**
+ * Hands the lists and tasks of an account that is being deleted to another account, like its Drive files
+ * and calendar events (`transferAccountData`). Every list that holds tasks arrives as a new list named
+ * after its old owner, below the receiver's own lists; an empty list stays behind. A new id keeps the
+ * fixed id of the default list (`listsOf`) free, so a restored account starts with a fresh "My Tasks".
+ * A link to the old owner's mail stays on the task and shows only if the receiver may read that mail.
+ */
+export async function transferTasks(env: CloudflareEnv, fromId: string, fromName: string, toId: string): Promise<void> {
+	// Before migration 9000 there is nothing to hand over.
+	await reading<void>(undefined, async () => {
+		const db = getDb(env);
+		const [holding, own] = await Promise.all([
+			db.selectDistinct({ listId: tasks.listId }).from(tasks).where(eq(tasks.userId, fromId)),
+			db.select().from(taskLists).where(eq(taskLists.userId, fromId)),
+		]);
+		const withTasks = new Set(holding.map((row) => row.listId));
+		const moving = own.filter((list) => withTasks.has(list.id)).sort(byPosition);
+		if (moving.length === 0) return;
+		let last = (await listsOf(db, toId)).at(-1)?.position ?? null;
+		const suffix = ` (${fromName})`.slice(0, TASK_LIST_TITLE_MAX - 1);
+		for (const list of moving) {
+			const id = newId("tl");
+			last = rankBetween(last, null);
+			await db.batch([
+				db.insert(taskLists).values({ id, userId: toId, title: `${list.title.slice(0, TASK_LIST_TITLE_MAX - suffix.length)}${suffix}`, position: last, createdAt: list.createdAt }),
+				db.update(tasks).set({ userId: toId, listId: id }).where(and(eq(tasks.listId, list.id), eq(tasks.userId, fromId))),
+				db.delete(taskLists).where(and(eq(taskLists.id, list.id), eq(taskLists.userId, fromId))),
+			]);
+		}
 	});
 }
 

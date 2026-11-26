@@ -2772,6 +2772,7 @@
 	"tasks.error.lastList": "The last list cannot be deleted.",
 	"tasks.error.loadFailed": "Could not load tasks.",
 	"tasks.error.saveFailed": "Could not save the change. Please try again.",
+	"tasks.accountTransferHint": "Task lists that hold tasks move too, named after the deleted account.",
 	"tasks.mail.add": "Add to tasks",
 	"tasks.mail.addHint": "Add to tasks (Shift+T)",
 	"tasks.mail.added": "Added to tasks",

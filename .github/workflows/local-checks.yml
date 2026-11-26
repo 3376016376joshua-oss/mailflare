@@ -1,0 +1,39 @@
+name: Local checks
+
+# Local fork: upstream's checks.yml only runs in hieunc229/mailflare, so nothing checked this
+# repository. This runs the same steps here, plus the Tasks smoke script on PostgreSQL (pglite,
+# in memory, no service needed). Kept in its own file so upstream's workflow merges untouched.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: local-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    if: github.repository == '3376016376joshua-oss/mailflare'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # Lint, the type check and one test read the generated migration bundle.
+      - run: npm run db:bundle
+      - run: npm run lint
+      - run: npx tsc --noEmit
+      - run: node --test tests/*.test.mjs
+      - run: npm run build
+      - name: Tasks smoke on PostgreSQL (pglite)
+        run: node scripts/run-ts.mjs scripts/local-tasks-smoke.ts pglite://memory
+        env:
+          MAILFLARE_DB_DIALECT: postgres

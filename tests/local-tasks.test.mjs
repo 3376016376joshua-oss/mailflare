@@ -17,6 +17,7 @@ await build({
 		schemas: join(root, "src/lib/tasks/schemas.ts"),
 		service: join(root, "src/lib/tasks/service.ts"),
 		backups: join(root, "src/lib/backups/export.ts"),
+		deletion: join(root, "src/lib/accounts/deletion.ts"),
 		database: join(root, "server/runtime/sqlite-database.ts"),
 		migrate: join(root, "server/runtime/migrate.ts"),
 	},
@@ -36,6 +37,7 @@ const utils = await load("utils");
 const schemas = await load("schemas");
 const service = await load("service");
 const backups = await load("backups");
+const deletion = await load("deletion");
 const { SqliteDatabase } = await load("database");
 const { applyMigrations } = await load("migrate");
 
@@ -681,6 +683,57 @@ test("deleting an account deletes its lists and tasks", async (t) => {
 	assert.deepEqual(database.db.prepare("SELECT title FROM local_tasks").all().map((row) => row.title), ["Kevin's"]);
 	assert.deepEqual(database.db.prepare("SELECT user_id FROM local_task_lists").all().map((row) => row.user_id), ["u1"]);
 	assert.equal((await service.listTaskLists(env, kevin)).lists.length, 1);
+});
+
+test("deleting an account with a transfer hands its lists and tasks to the chosen account", async (t) => {
+	const { env, database, add, titles, addMessage } = await createFixture(t);
+	database.db.prepare("UPDATE users SET role = 'admin', is_primary_admin = 1 WHERE id = 'u1'").run();
+	database.db.prepare("UPDATE users SET name = 'Anna' WHERE id = 'u2'").run();
+	const admin = { ...kevin, role: "admin", isPrimaryAdmin: true };
+	addMessage("m2", "mb2", "u2", "Invoice");
+	await add({ title: "Kevin's" });
+	const dentist = await add({ title: "Book dentist", messageId: "m2" }, anna);
+	const work = await service.createTaskList(env, anna, { title: "Work" });
+	const report = await add({ title: "Quarterly report", listId: work.id, starred: true, due: { date: "2026-12-01" }, repeat: { freq: "weekly" } }, anna);
+	const figures = await add({ title: "Collect figures", parentId: report.id }, anna);
+	await service.createTaskList(env, anna, { title: "Empty" });
+
+	assert.deepEqual(await deletion.deleteAccounts(env, admin, { ids: ["u2"], transferToId: "u1" }), { ok: true, deleted: 1 });
+
+	// Kevin's own list stays first; Anna's lists follow in her order, named after her. The empty one is not carried over.
+	const { lists } = await service.listTaskLists(env, kevin);
+	assert.deepEqual(lists.map((list) => [list.title, list.openCount]), [["My Tasks", 1], ["My Tasks (Anna)", 1], ["Work (Anna)", 1]]);
+	assert.ok(lists.every((list, index) => index === 0 || lists[index - 1].position < list.position));
+	assert.deepEqual(await titles({ listId: lists[1].id }), ["Book dentist"]);
+	assert.deepEqual(await titles({ listId: lists[2].id }), ["Quarterly report", "Collect figures"]);
+	const moved = await service.getTask(env, kevin, report.id);
+	assert.deepEqual([moved.starred, moved.dueDate, moved.repeat.freq, moved.listId], [true, "2026-12-01", "weekly", lists[2].id]);
+	assert.equal((await service.getTask(env, kevin, figures.id)).parentId, report.id);
+	assert.deepEqual(await titles({ view: "starred" }), ["Quarterly report"]);
+	// Mail stays with the deleted account, so the link to it does not show.
+	assert.equal((await service.getTask(env, kevin, dentist.id)).message, null);
+	// They are Kevin's tasks now: he can complete one, and the repeat carries on in his list.
+	const done = await service.updateTask(env, kevin, report.id, { completed: true }, NOW);
+	assert.equal(done.next.listId, lists[2].id);
+
+	// Nothing of the kind is left with the deleted account but its empty list, and its default list id is free again.
+	assert.deepEqual(database.db.prepare("SELECT DISTINCT user_id FROM local_tasks").all().map((row) => row.user_id), ["u1"]);
+	assert.deepEqual(database.db.prepare("SELECT title FROM local_task_lists WHERE user_id = 'u2'").all().map((row) => row.title), ["Empty"]);
+	assert.equal(database.db.prepare("SELECT count(*) AS n FROM local_task_lists WHERE id = 'tl_u2'").get().n, 0);
+});
+
+test("deleting an account without a transfer leaves its tasks with it, and a transfer before migration 9000 still deletes", async (t) => {
+	const { env, database, add, titles } = await createFixture(t);
+	database.db.prepare("UPDATE users SET role = 'admin', is_primary_admin = 1 WHERE id = 'u1'").run();
+	const admin = { ...kevin, role: "admin", isPrimaryAdmin: true };
+	await add({ title: "Anna's" }, anna);
+	assert.deepEqual(await deletion.deleteAccounts(env, admin, { ids: ["u2"] }), { ok: true, deleted: 1 });
+	assert.deepEqual(await titles({}, { now: NOW }, anna), ["Anna's"]);
+	assert.deepEqual((await service.listTaskLists(env, kevin)).lists.map((list) => list.title), ["My Tasks"]);
+
+	database.db.prepare("UPDATE users SET deleted_at = NULL, disabled = 0 WHERE id = 'u2'").run();
+	database.db.exec("DROP TABLE local_tasks; DROP TABLE local_task_lists;");
+	assert.deepEqual(await deletion.deleteAccounts(env, admin, { ids: ["u2"], transferToId: "u1" }), { ok: true, deleted: 1 });
 });
 
 test("a due reminder is claimed once, and not for completed or long-missed tasks", async (t) => {
