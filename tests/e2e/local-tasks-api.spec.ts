@@ -28,6 +28,7 @@ test.beforeAll(async ({ request, baseURL }) => {
 
 test.afterAll(async ({ request }) => {
 	await resetDemo(request);
+	await request.delete("/api/seed/local-user");
 });
 
 test("tasks need a session", async ({ playwright, baseURL }) => {
@@ -39,6 +40,55 @@ test("tasks need a session", async ({ playwright, baseURL }) => {
 	} finally {
 		await anonymous.dispose();
 	}
+});
+
+test("another account cannot read or change this account's tasks and lists", async ({ request }) => {
+	const mine = await (await request.get("/api/tasks/lists", { headers })).json();
+	const listId: string = mine.lists[0].id;
+	const task = (await (await request.post("/api/tasks", { headers, data: { title: "Private errand", notes: "for my eyes", starred: true, due: { date: "2030-03-04" } } })).json()).task;
+
+	// A second, ordinary account on the same installation (dev-only route; see src/app/api/seed/local-user).
+	const created = await request.post("/api/seed/local-user");
+	expect(created.ok(), `POST /api/seed/local-user returned ${created.status()}`).toBe(true);
+	const { credentials } = await created.json();
+	const login = await request.post("/api/auth/login", { headers: { Origin: origin }, data: credentials });
+	expect(login.ok(), `second login returned ${login.status()}`).toBe(true);
+	const other = { Authorization: `Bearer ${(await login.json()).token}`, "X-Time-Zone": "UTC" };
+
+	const refusals: Array<[string, Promise<{ status(): number; json(): Promise<{ code?: string }> }>]> = [
+		["read the task", request.get(`/api/tasks/${task.id}`, { headers: other })],
+		["edit the task", request.patch(`/api/tasks/${task.id}`, { headers: other, data: { title: "taken", completed: true } })],
+		["move the task", request.post(`/api/tasks/${task.id}/move`, { headers: other, data: { parentId: null } })],
+		["delete the task", request.delete(`/api/tasks/${task.id}`, { headers: other })],
+		["add a task to the list", request.post("/api/tasks", { headers: other, data: { title: "intruder", listId } })],
+		["add a subtask to the task", request.post("/api/tasks", { headers: other, data: { title: "intruder", parentId: task.id } })],
+		["rename the list", request.patch(`/api/tasks/lists/${listId}`, { headers: other, data: { title: "taken" } })],
+		["clear the list", request.post(`/api/tasks/lists/${listId}/clear`, { headers: other })],
+		["delete the list", request.delete(`/api/tasks/lists/${listId}`, { headers: other })],
+	];
+	for (const [what, pending] of refusals) {
+		const response = await pending;
+		expect([what, response.status(), (await response.json()).code]).toEqual([what, 404, "NOT_FOUND"]);
+	}
+
+	// What the second account can list is its own: one empty default list, and no task under any filter.
+	const theirs = await (await request.get("/api/tasks/lists", { headers: other })).json();
+	expect(theirs.lists.map((list: { title: string; openCount: number }) => [list.title, list.openCount])).toEqual([["My Tasks", 0]]);
+	expect(theirs.lists[0].id).not.toBe(listId);
+	for (const query of [`listId=${listId}`, "view=starred", "view=upcoming", "dueFrom=2030-03-01&dueTo=2030-03-31", ""]) {
+		const body = await (await request.get(`/api/tasks?${query}`, { headers: other })).json();
+		expect([query, body.tasks, body.occurrences]).toEqual([query, [], []]);
+	}
+	// Moving its own task into the first account's list, or under its task, is refused too.
+	const own = (await (await request.post("/api/tasks", { headers: other, data: { title: "Mine" } })).json()).task;
+	expect((await request.post(`/api/tasks/${own.id}/move`, { headers: other, data: { listId } })).status()).toBe(404);
+	expect((await request.post(`/api/tasks/${own.id}/move`, { headers: other, data: { parentId: task.id } })).status()).toBe(404);
+
+	// The first account's task and list are as it left them.
+	expect((await (await request.get(`/api/tasks/${task.id}`, { headers })).json()).task).toMatchObject({ title: "Private errand", notes: "for my eyes", status: "needs-action", listId, parentId: null });
+	const after = await (await request.get("/api/tasks/lists", { headers })).json();
+	expect(after.lists.map((list: { id: string; title: string; openCount: number }) => [list.id, list.title, list.openCount])).toEqual([[listId, "My Tasks", 1]]);
+	expect((await request.delete(`/api/tasks/${task.id}`, { headers })).status()).toBe(200);
 });
 
 test("lists, tasks, subtasks, moves and views work end to end", async ({ request }) => {

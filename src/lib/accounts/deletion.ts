@@ -12,6 +12,7 @@ import { avatarKeyFor } from "@/app/api/profile/avatar/utils";
 import { getAccountPurgeCutoff } from "./deletion-utils";
 import type { DeleteAccountsInput, DeleteAccountsResult } from "./deletion-types";
 import { deleteUnreferencedObjects } from "@/lib/drive/shared-objects";
+import { transferTasks } from "@/lib/tasks/service";
 
 const CHUNK = 50;
 
@@ -22,8 +23,9 @@ function chunks<T>(items: T[], size = CHUNK): T[][] {
 }
 
 /**
- * Moves Drive files (documents included) and calendar events from one account to another. Drive items that sat at
- * the top level go into a folder on the receiving account so they do not mix with its own files.
+ * Moves Drive files (documents included), calendar events and tasks from one account to another. Drive items that
+ * sat at the top level go into a folder on the receiving account so they do not mix with its own files; task lists
+ * arrive named after their old owner (`transferTasks`).
  */
 export async function transferAccountData(env: CloudflareEnv, fromId: string, fromName: string, toId: string): Promise<void> {
 	const db = getDb(env);
@@ -40,11 +42,13 @@ export async function transferAccountData(env: CloudflareEnv, fromId: string, fr
 		await db.update(driveItems).set({ ownerId: toId }).where(and(eq(driveItems.ownerId, fromId), isNull(driveItems.uploadId)));
 	}
 	await db.update(calendarEvents).set({ userId: toId }).where(eq(calendarEvents.userId, fromId));
+	await transferTasks(env, fromId, fromName, toId);
 }
 
 /**
  * Soft-deletes accounts: they are disabled, signed out and stamped with `deletedAt`. They can be restored until the
- * scheduled purge removes them after the retention window. Optionally hands their Drive and calendar data to another account.
+ * scheduled purge removes them after the retention window. Optionally hands their Drive, calendar and task data to another
+ * account.
  */
 export async function deleteAccounts(env: CloudflareEnv, actor: SessionUser, input: DeleteAccountsInput): Promise<DeleteAccountsResult> {
 	if (!canManageUsers(actor)) return { ok: false, status: 403, error: "You do not have permission to manage users" };

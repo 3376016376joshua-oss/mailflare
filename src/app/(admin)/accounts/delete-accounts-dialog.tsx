@@ -44,7 +44,7 @@ export function DeleteAccountsDialog({ open, onOpenChange, accounts, candidates,
 			<ul className="space-y-1 text-sm text-neutral-700">{accounts.map((account) => <li key={account.id} className="truncate">{account.name} <span className="text-neutral-500">{account.email}</span></li>)}</ul>
 			<div className="space-y-2"><Label htmlFor="transfer-account">{t("accounts.transferLabel")}</Label>
 				<Select id="transfer-account" value={transferToId} onChange={(event) => setTransferToId(event.target.value)} disabled={deleting} containerClassName="h-10 w-full bg-white px-0" className="px-3 text-sm"><option value="">{t("accounts.transferNone")}</option>{recipients.map((account) => <option key={account.id} value={account.id}>{account.name} ({account.email})</option>)}</Select>
-				<p className="text-xs text-neutral-500">{t("accounts.transferHint")}</p></div>
+				<p className="text-xs text-neutral-500">{t("accounts.transferHint")} {t("tasks.accountTransferHint")}</p></div>
 			{message && <p role="alert" className="text-sm text-red-600">{message}</p>}
 			<div className="flex justify-end gap-2"><Button variant="outline" disabled={deleting} onClick={() => onOpenChange(false)}>{t("common.cancel")}</Button><Button variant="destructive" disabled={deleting || !accounts.length} onClick={confirm}>{deleting ? t("accounts.deleting") : t("accounts.confirmDelete")}</Button></div>
 		</DialogContent>

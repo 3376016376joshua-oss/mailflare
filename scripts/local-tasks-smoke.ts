@@ -15,7 +15,8 @@ import { getDatabaseConfig } from "@/db/with-database";
 import { openExternalDatabase } from "@/db/external";
 import { applyPendingMigrations } from "@/lib/migrations/service";
 import {
-	claimDueTaskReminders, clearCompletedTasks, createTask, createTaskList, deleteTask, deleteTaskList, listTaskLists, listTasks, moveTask, updateTask, updateTaskList,
+	claimDueTaskReminders, clearCompletedTasks, createTask, createTaskList, deleteTask, deleteTaskList, listTaskLists, listTasks, moveTask, transferTasks, updateTask,
+	updateTaskList,
 } from "@/lib/tasks/service";
 
 const [url, driver] = process.argv.slice(2);
@@ -86,8 +87,18 @@ await deleteTask(env, user, b.id);
 await deleteTaskList(env, user, home.id);
 check("delete task and list", !(await titles({})).includes("B") && (await listTaskLists(env, user)).lists.length === 1);
 
+const heir = { id: `usr_tasks_heir_${stamp}`, email: `tasks-heir${stamp}@example.com`, role: "user" as const, timeZone: "UTC" };
+await db.insert(users).values({ id: heir.id, email: heir.email, passwordHash: "x", name: "Tasks heir" });
+const carried = (await titles({})).sort();
+await transferTasks(env, user.id, "Tasks smoke", heir.id);
+const inherited = await listTaskLists(env, heir);
+check("a transfer hands lists and tasks to another account", same(inherited.lists.map((list) => list.title), ["My Tasks", "My Tasks (Tasks smoke)"])
+	&& same((await listTasks(env, heir, {}, { now })).tasks.map((task) => task.title).sort(), carried) && carried.length > 0
+	&& (await titles({})).length === 0);
+
 await db.delete(users).where(eq(users.id, user.id));
-check("deleting the account deletes its tasks", (await listTasks(env, user, {}, { now })).tasks.length === 0);
+await db.delete(users).where(eq(users.id, heir.id));
+check("deleting the account deletes its tasks", (await listTasks(env, heir, {}, { now })).tasks.length === 0);
 
 await external.sqlExecutor.close?.();
 const failed = checks.filter(([, ok]) => !ok);
